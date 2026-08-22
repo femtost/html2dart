@@ -60,19 +60,92 @@ function travelToEle(node,cssRules,dart,depth){
             else
                 travelToEle(childNode,cssRules,dart,depth+1);            
     }
+    function processColor(color){
+        color = color.trim();
+        if (!color.startsWith("#")) return color;
+
+        if (color.match(/^#[0-9A-Fa-f]{3}$/) != null){
+            let char1=color.slice(1,2); 
+            let char2=color.slice(2,3); 
+            let char3=color.slice(3,4); 
+            return "#" + char1.repeat(2) + char2.repeat(2) + char3.repeat(2);
+        }
+        // Unknown cases
+        return color;
+    }
+    function makeBoxDecoration(node){
+        var color = processColor(node.getAttribute("h2d-background-color"));
+        color = color.startsWith("#")? 
+            `Color(0x${color.slice(1).toUpperCase()})`
+            :`Colors.${color.toLowerCase()}`;
+
+        var rValues = node.getAttribute("h2d-border-radius").trim().replace(/[\s]{2,}/g,"\x20");
+
+        if (!rValues.includes("\x20"))
+            var [b1,b2,b3,b4] = [rValues,rValues,rValues,rValues];
+        else 
+            var [b1,b2,b3,b4] = rValues.split("\x20");
+
+        return `BoxDecoration(color: ${color}, borderRadius: `+
+        `BorderRadius.only(topLeft: Radius.circular(${b1}), topRight: Radius.circular(${b2}), `+
+        `bottomRight: Radius.circular(${b3}), bottomLeft: Radius.circular(${b4})))`;
+    }
+    function cssKvToFlutterProp(node,attrName,propName,value){
+        const PROP_MAP = {
+            h2dWidth:"width", h2dHeight:"height", h2dColor:"color"
+        };
+        const ATTR_SETS = [
+            ["h2d-background-color","h2d-border-radius"]
+        ];
+        function getAttrSet(attrName){
+            for (let s of ATTR_SETS)
+                if (s.includes(attrName)) return s;
+
+            return null;
+        }
+
+        // Single value
+        if (PROP_MAP[propName]!=null){        
+            propName = PROP_MAP[propName];
+            value = value.replaceAll('"','\\"');
+
+            if (value.trim().startsWith("$(")){
+                value = value.trim().slice(2).replace(/\)$/,"");
+            }
+            value = processColor(value);
+            return [propName,value,[]];
+        }
+
+        // Set of attributes
+        var set = getAttrSet(attrName);
+
+        if (set != null){
+            if (set.includes("h2d-background-color") || set.includes("h2d-border-radius"))
+                return ["decoration",makeBoxDecoration(node),set];
+        }
+        
+        // Unknown cases
+        return [propName,value,[]];
+    }
     function processAttributes(node){
         if (node.getAttributeNames==null) return;
-        const NO_QUOTES = ["onPressed","onLongPress"]; // More
+        const NO_QUOTES = ["onPressed","onLongPress","width","height","decoration"]; // More
         const SKIPS = ["if","for","id","class","paField"];
+        
         var attrNames = node.getAttributeNames();
         var propNames = attrNames.map(x => attr2prop(x));
         var indent2 = indent+"\x20".repeat(4);
+        var processedAttrs = [];
 
         for (let i=0; i<propNames.length; i++){
             let attrName = attrNames[i];
-            let propName = propNames[i];
-            let value = node.getAttribute(attrName).replaceAll('"','\\"');
+            if (processedAttrs.includes(attrName)) continue;
+
+            let _propName = propNames[i];
+            let [propName,value,processeds] = 
+                cssKvToFlutterProp(node,attrName,_propName,node.getAttribute(attrName));
             if (SKIPS.includes(propName)) continue;
+            processedAttrs = processedAttrs.concat(processeds);
 
             if (NO_QUOTES.includes(propName))
                 dart.code += `${indent2}${propName}: ${value},\n`;
@@ -97,6 +170,7 @@ function travelToEle(node,cssRules,dart,depth){
     if (node.tagName=="import"){
         let packagePath = node.getAttribute("package");
         dart.code += `import "package:${packagePath}";\n`;
+        // No other attributes
     }
     else  
     // Function tag
@@ -113,12 +187,14 @@ function travelToEle(node,cssRules,dart,depth){
         dart.code += arr.join(",");
         dart.code += `}) {\n\x20\x20\x20\x20return\n`;
         goDeeper();
+        // No other attributes
     }
     else    
     // Screen scaffold
     if (node.tagName=="scaffold"){
         dart.code += `${indent}Scaffold(body:\n`;
         goDeeper();
+        // No other attributes
         dart.code += `${indent});\n}\n\n`;
 
         // Mimic the mechanism of flutter-view.io
@@ -180,6 +256,7 @@ function travelToEle(node,cssRules,dart,depth){
             }
         
         goDeeper();
+        // Upper tier of DFS, processAttributes inside travelToEle again.
         dart.code += `${indent}),\n`;
     }
     else    
@@ -203,8 +280,10 @@ function travelToEle(node,cssRules,dart,depth){
             processAttributes(node);
             dart.code += `${indent}),\n`;
         }
-        else{
-            dart.code += `${indent}${className}(),\n`;
+        else{            
+            dart.code += `${indent}${className}(\n`;
+            processAttributes(node);
+            dart.code += `${indent}),\n`;
         }
     }
     else     
@@ -237,14 +316,17 @@ function travelToEle(node,cssRules,dart,depth){
     else 
     // Text node    
     if (node.nodeType==TEXT_NODE){
-        if (node.textContent.trim().length>0)
+        if (node.textContent.trim().length>0){
             dart.code += `${indent}const `+
             `Text("${node.textContent.replaceAll('"','\\"')}"),\n`;
+        }
+        // No other attributes
     } 
     else 
     // Comment node    
     if (node.nodeType==COMMENT_NODE){
         dart.code += `${indent}/* ${node.textContent} */\n`;
+        // No other attributes
     } 
     // Not to handle
     else {
@@ -265,7 +347,7 @@ function convertToDart(htmlFilePath,cssFilePath,dartFilePath){
         contentType: 'application/xml'
     });
     var document = dom.window.document;
-    var rootEle = document.documentElement;
+    var rootEle = document.documentElement; // flutter-xml tag
     // var body = document.querySelector("body"); // No 'body' in xml
     // log(rootEle.outerHTML);
     // Sample DOM got:
@@ -277,6 +359,19 @@ function convertToDart(htmlFilePath,cssFilePath,dartFilePath){
     // CSS
     const sheet = CSSOM.parse(cssContent);
     // console.log(sheet.cssRules);
+    
+    for (let rule of sheet.cssRules){
+        let selector = rule.selectorText;
+        let eles = [...document.querySelectorAll(selector)];
+
+        for (let ele of eles){            
+            for (let i=0; i<rule.style.length; i++){
+                let key = rule.style[i];
+                let value = rule.style[key];
+                ele.setAttribute("h2d-"+key, value);
+            }
+        }
+    }
 
     // Convert to dart
     ELEMENT_NODE = dom.window.Node.ELEMENT_NODE;
