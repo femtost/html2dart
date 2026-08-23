@@ -180,7 +180,8 @@ function travelToEle(node,cssRules,dart,depth){
     function processAttributes(node){
         if (node.getAttributeNames==null) return;
         const NO_QUOTES = [
-            "onPressed","onLongPress","width","height","decoration","style"
+            "onPressed","onLongPress","width","height","decoration","style","p",
+            "controller", "onTap"
         ]; // More
         const SKIPS = ["if","for","id","class","paField"];
         
@@ -221,7 +222,7 @@ function travelToEle(node,cssRules,dart,depth){
     // Import tags
     if (node.tagName=="import"){
         let packagePath = node.getAttribute("package");
-        dart.code += `import "package:${packagePath}";\n`;
+        dart.code += `import "${packagePath}";\n`;
         // No other attributes
     }
     else  
@@ -245,6 +246,23 @@ function travelToEle(node,cssRules,dart,depth){
     // Screen scaffold
     if (node.tagName=="scaffold"){
         dart.code += `${indent}Scaffold(body:\n`;
+        goDeeper();
+        // No other attributes
+        dart.code += `${indent});\n}\n\n`;
+
+        // Mimic the mechanism of flutter-view.io
+        dart.code += 
+        `// Mimic flutter-view.io\n`+
+        `__flatten(List list) {\n`+
+        `    return List<Widget>.from(list.expand((item) {\n`+
+        `        return item is Iterable ? item : [item as Widget];\n`+
+        `    }));\n`+
+        `}\n// EOF\n`;
+    }
+    else 
+    // Component container
+    if (node.tagName=="container" && depth==1){
+        dart.code += `${indent}Container(child:\n`;
         goDeeper();
         // No other attributes
         dart.code += `${indent});\n}\n\n`;
@@ -309,7 +327,8 @@ function travelToEle(node,cssRules,dart,depth){
         for (let c of node.children)
             if (c.getAttribute!=null && c.getAttribute("pa-field")!=null){
                 let paField = c.getAttribute("pa-field");
-                dart.code += `${indent}${tab}${paField}:\n`;
+                processAttributes(node);
+                dart.code += `${indent}${tab}${paField}:\n`;                
                 travelToEle(c,cssRules,dart,depth+1);            
                 c.setAttribute("pa-field-processed","yes");
             }
