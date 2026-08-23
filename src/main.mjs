@@ -2,6 +2,7 @@
 import fs from "fs";
 
 // Libs
+import chokidar from 'chokidar';
 import CSSOM from 'cssom';
 import { glob } from 'glob';
 import { JSDOM } from 'jsdom';
@@ -10,13 +11,16 @@ import { JSDOM } from 'jsdom';
 var log = console.log;
 
 // Globals
+const TAB = "\x20".repeat(4);
 var ELEMENT_NODE;
 var TEXT_NODE;
 var COMMENT_NODE;
 
+var ____UTILS____;
+
 // Tag name to class name
 function tag2class(tagName){
-    if (tagName=="DIV") return "Container";
+    if (tagName=="SPAN") return "Container";
     var tokens = tagName.toLowerCase().trim().split("-");
     var className = [];
 
@@ -74,12 +78,21 @@ function travelToEle(node,cssRules,dart,depth){
         return color;
     }
     function makeBoxDecoration(node){
-        var color = processColor(node.getAttribute("h2d-background-color"));
-        color = color.startsWith("#")? 
-            `Color(0x${color.slice(1).toUpperCase()})`
-            :`Colors.${color.toLowerCase()}`;
+        var color, rValues;
 
-        var rValues = node.getAttribute("h2d-border-radius").trim().replace(/[\s]{2,}/g,"\x20");
+        try{
+            color = processColor(node.getAttribute("h2d-background-color"));
+            color = color.startsWith("#")? 
+                `Color(0x${color.slice(1).toUpperCase()})`
+                :`Colors.${color.toLowerCase()}`;
+        } catch{
+            color = "Colors.white";
+        }
+        try{
+            rValues = node.getAttribute("h2d-border-radius").trim().replace(/[\s]{2,}/g,"\x20");
+        } catch{
+            rValues = "0";
+        }
 
         if (!rValues.includes("\x20"))
             var [b1,b2,b3,b4] = [rValues,rValues,rValues,rValues];
@@ -90,12 +103,41 @@ function travelToEle(node,cssRules,dart,depth){
         `BorderRadius.only(topLeft: Radius.circular(${b1}), topRight: Radius.circular(${b2}), `+
         `bottomRight: Radius.circular(${b3}), bottomLeft: Radius.circular(${b4})))`;
     }
+    function makeElevatedButtonStyle(node){
+        var padding, minWidth, minHeight;
+
+        try{
+            padding = node.getAttribute("h2d-padding");            
+        } catch{
+            padding = 0;
+        }
+        try{
+            minWidth = node.getAttribute("h2d-min-width");
+        } catch{
+            minWidth = 50;
+        }
+        try{
+            minHeight = node.getAttribute("h2d-min-height");
+        } catch{
+            minHeight = 50;
+        }
+
+        return `ElevatedButton.styleFrom(`+
+            `shape: const CircleBorder(),`+
+            `padding: EdgeInsets.fromLTRB(${padding}, ${padding}, ${padding}, ${padding}),`+
+            `minimumSize: const Size(${minWidth}, ${minHeight}),`+
+            `fixedSize: const Size(${minWidth}, ${minHeight}),`+
+            `backgroundColor: Colors.white,`+
+            `elevation: 2,`+
+        `)`;
+    }
     function cssKvToFlutterProp(node,attrName,propName,value){
         const PROP_MAP = {
             h2dWidth:"width", h2dHeight:"height", h2dColor:"color"
         };
         const ATTR_SETS = [
-            ["h2d-background-color","h2d-border-radius"]
+            ["h2d-background-color","h2d-border-radius"],
+            ["h2d-padding","h2d-min-width","h2d-min-height"]
         ];
         function getAttrSet(attrName){
             for (let s of ATTR_SETS)
@@ -122,6 +164,12 @@ function travelToEle(node,cssRules,dart,depth){
         if (set != null){
             if (set.includes("h2d-background-color") || set.includes("h2d-border-radius"))
                 return ["decoration",makeBoxDecoration(node),set];
+            else 
+            if (node.tagName=="elevated-button" && 
+                    (set.includes("h2d-padding") || set.includes("h2d-min-width") 
+                    || set.includes("h2d-min-height"))){
+                return ["style",makeElevatedButtonStyle(node),set];
+            }
         }
         
         // Unknown cases
@@ -129,7 +177,7 @@ function travelToEle(node,cssRules,dart,depth){
     }
     function processAttributes(node){
         if (node.getAttributeNames==null) return;
-        const NO_QUOTES = ["onPressed","onLongPress","width","height","decoration"]; // More
+        const NO_QUOTES = ["onPressed","onLongPress","width","height","decoration","style"]; // More
         const SKIPS = ["if","for","id","class","paField"];
         
         var attrNames = node.getAttributeNames();
@@ -153,15 +201,15 @@ function travelToEle(node,cssRules,dart,depth){
                 dart.code += `${indent2}${propName}: "${value}",\n`;
         }
     }
-    const knownClasses = {div:"Container"};
+    const knownClasses = {body:"Container", div:"Row", span:"Container"};
     // These must have "child:"
-    const withChild = {"sized-box":true, "elevated-button":true, "div":true, "center":true};
+    const withChild = {"sized-box":true, "elevated-button":true, "span":true, "center":true};
     // These must have "children:"
-    const withChildren = {row:true};
+    const withChildren = {row:true, div:true};
 
     // jsdom parse XML to lowercase tags, HTML to uppercase
     // Root tag
-    if (node.tagName=="flutter-xml"){
+    if (node.tagName=="flutter-html"){
         log("Root tag found");
         goDeeper();
     }
@@ -211,21 +259,27 @@ function travelToEle(node,cssRules,dart,depth){
     if (node.getAttribute!=null && node.getAttribute("if")!=null){
         let clause = node.getAttribute("if");
         let className = knownClasses[node.tagName] || tag2class(node.tagName);
+        let postAttributeStr = "";
 
-        if (withChildren[node.tagName]==true)
-            dart.code += `\n${indent}${clause}?\n${indent}${className}(children: __flatten([\n`;
+        if (withChildren[node.tagName]==true){
+            dart.code += `\n${indent}${clause}?\n${indent}${className}(\n`;
+            postAttributeStr = `${indent}${TAB}children: __flatten([\n`;
+        }
         else 
         if (withChild[node.tagName]==true){
-            if (node.childNodes.length>0 && node.innerHTML.trim().length>0)
-                dart.code += `\n${indent}${clause}?\n${indent}${className}(child:\n`;
+            if (node.childNodes.length>0 && node.innerHTML.trim().length>0){
+                dart.code += `\n${indent}${clause}?\n${indent}${className}(\n`;
+                postAttributeStr = `${indent}${TAB}child:\n`;
+            }
             else 
                 dart.code += `\n${indent}${clause}?\n${indent}${className}(\n`;
         }
         else
             dart.code += `\n${indent}${clause}?\n${indent}${className}(\n`;
         
-        goDeeper();
         processAttributes(node);
+        dart.code += postAttributeStr;
+        goDeeper();        
 
         if (withChildren[node.tagName]==true)
             dart.code += `${indent}])):SizedBox(),\n`;
@@ -239,6 +293,7 @@ function travelToEle(node,cssRules,dart,depth){
     // Any tag with 'for'
     if (node.getAttribute!=null && node.getAttribute("for")!=null){
         // todo
+        // Currently: Use ListView and items in Dart code
     }
     else 
     // Any tag having children with 'pa-field'
@@ -260,13 +315,15 @@ function travelToEle(node,cssRules,dart,depth){
         dart.code += `${indent}),\n`;
     }
     else    
-    // Auto-column above row
+    // Auto-column above div, row
     if (node.tagName!="column" && node.children!=null && node.children.length>0 
-            && node.children[0].tagName=="row"){
+            && (node.children[0].tagName=="div" || node.children[0].tagName=="row")){
         let className = knownClasses[node.tagName] || tag2class(node.tagName);
-        dart.code += `${indent}${className}(child: Column(children: __flatten([\n`;
-        goDeeper();
+        dart.code += `${indent}${className}(\n`;
+        let postAttributeStr = `${indent}${TAB}child: Column(children: __flatten([\n`;
         processAttributes(node);
+        dart.code += postAttributeStr;
+        goDeeper();
         dart.code += `${indent}]))),\n`;
     }
     else 
@@ -275,9 +332,11 @@ function travelToEle(node,cssRules,dart,depth){
         let className = knownClasses[node.tagName] || tag2class(node.tagName);
 
         if (node.childNodes.length>0 && node.innerHTML.trim().length>0){
-            dart.code += `${indent}${className}(child:\n`;
-            goDeeper();
+            dart.code += `${indent}${className}(\n`;
+            let postAttributeStr = `${indent}${TAB}child:\n`;
             processAttributes(node);
+            dart.code += postAttributeStr;
+            goDeeper();
             dart.code += `${indent}),\n`;
         }
         else{            
@@ -290,9 +349,11 @@ function travelToEle(node,cssRules,dart,depth){
     // Those with children
     if (withChildren[node.tagName]!=null){
         let className = knownClasses[node.tagName] || tag2class(node.tagName);
-        dart.code += `${indent}${className}(children: __flatten([\n`;
-        goDeeper();
+        dart.code += `${indent}${className}(\n`;
+        let postAttributeStr = `${indent}${TAB}children: __flatten([\n`;
         processAttributes(node);
+        dart.code += postAttributeStr;
+        goDeeper();
         dart.code += `${indent}])),\n`;
     }
     else 
@@ -300,8 +361,8 @@ function travelToEle(node,cssRules,dart,depth){
     if (knownClasses[node.tagName] != null){
         let className = knownClasses[node.tagName] || tag2class(node.tagName);
         dart.code += `${indent}${className}(\n`;
-        goDeeper();
         processAttributes(node);
+        goDeeper();
         dart.code += `${indent}),\n`;
     } 
     else 
@@ -309,8 +370,8 @@ function travelToEle(node,cssRules,dart,depth){
     if (node.nodeType==ELEMENT_NODE){
         let className = knownClasses[node.tagName] || tag2class(node.tagName);
         dart.code += `${indent}${className}(\n`;
-        goDeeper();
         processAttributes(node);
+        goDeeper();
         dart.code += `${indent}),\n`;
     } 
     else 
@@ -325,7 +386,7 @@ function travelToEle(node,cssRules,dart,depth){
     else 
     // Comment node    
     if (node.nodeType==COMMENT_NODE){
-        dart.code += `${indent}/* ${node.textContent} */\n`;
+        dart.code += `${indent}/*${node.textContent}*/\n`;
         // No other attributes
     } 
     // Not to handle
@@ -342,12 +403,14 @@ function convertToDart(htmlFilePath,cssFilePath,dartFilePath){
     log("CSS length:",cssContent.length);   
 
     // HTML
+    log("Parsing HTML...");
     var dom = new JSDOM(htmlContent,{
         // WARN: Need this or the tag after a self-closing tag becomes child.
         contentType: 'application/xml'
     });
+    log("HTML parsed");
     var document = dom.window.document;
-    var rootEle = document.documentElement; // flutter-xml tag
+    var rootEle = document.documentElement; // flutter-html tag
     // var body = document.querySelector("body"); // No 'body' in xml
     // log(rootEle.outerHTML);
     // Sample DOM got:
@@ -357,7 +420,9 @@ function convertToDart(htmlFilePath,cssFilePath,dartFilePath){
            <main-ui-view with=...*/
 
     // CSS
+    log("Parsing CSS...");
     const sheet = CSSOM.parse(cssContent);
+    log("CSS parsed");
     // console.log(sheet.cssRules);
     
     for (let rule of sheet.cssRules){
@@ -378,13 +443,46 @@ function convertToDart(htmlFilePath,cssFilePath,dartFilePath){
     TEXT_NODE = dom.window.Node.TEXT_NODE;
     COMMENT_NODE = dom.window.Node.COMMENT_NODE;
 
-    var dart = {code:"// Generated by html2dart\n"};
+    var dart = {code:
+        "// Generated by html2dart\n"+
+        "// NOTE: DIV FOR HTML2DART HAS NO CSS, ONLY SPAN\n"
+    };
     travelToEle(rootEle,sheet,dart,-1); // -1 to ignore root tag indent
     // log("Dart code ========================================");
     // log(dart.code);
     // log("========================================");
     fs.writeFileSync(dartFilePath,dart.code);
 }
+
+// Get file modified time
+async function getModifiedTime(filePath){
+    const stat = await fs.promises.stat(filePath);
+    return stat.mtimeMs;
+}
+
+// Check if file exists
+async function fileExists(path) {
+    try {
+        await fs.promises.access(path);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+var ____CORE____;
+
+// Uncaught synchronous exceptions
+process.on('uncaughtException', err => {
+    log('\nUncaught exception:', err);
+    log(err.stack);
+});
+
+// Unhandled Promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+    log('\nUnhandled rejection:', reason);
+    log(reason.stack);
+});
 
 // Main
 (async function main(){
@@ -403,13 +501,28 @@ function convertToDart(htmlFilePath,cssFilePath,dartFilePath){
     log("HTML files found:");
     log(files);
 
-    for (let f of files){
-        let htmlFilePath = f;
-        let cssFilePath = f.replace(/\.html$/,'.css');
-        let dartFilePath = f.replace(/\.html$/,'.dart');
-        log("\nProcessing:",htmlFilePath);
-        convertToDart(htmlFilePath,cssFilePath,dartFilePath);        
-    }
+    chokidar.watch(relativePath, {
+        usePolling: true // Equivalent to nodemon -L
+    }).on('change', async(f)=>{
+        if (/\.(html|css)$/.test(f)) {
+            console.log('\nChanged:', f);
+            f = f.replace(/\.[a-z]+$/, ".html");
+            let htmlFilePath = f;            
+            let cssFilePath = f.replace(/\.html$/,'.css');
+            let dartFilePath = f.replace(/\.html$/,'.dart');
+            // log("HTML file:",htmlFilePath);
+            // log("CSS  file:",cssFilePath);
+            // log("Dart file:",dartFilePath);
+
+            if (!await fileExists(cssFilePath)){
+                log(`Missing CSS, skipping ${f}`);
+                return;
+            }
+            // Convert            
+            log("Processing modified file:",htmlFilePath);
+            convertToDart(htmlFilePath,cssFilePath,dartFilePath);        
+        }
+    });
 })();
 // EOF
 
