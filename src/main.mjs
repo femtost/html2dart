@@ -112,21 +112,23 @@ function travelToEle(node,cssRules,dart,depth){
             padding = 0;
         }
         try{
-            minWidth = node.getAttribute("h2d-min-width");
+            minWidth = node.getAttribute("h2d-min-width").trim();
+            if (minWidth.startsWith("$(")) minWidth=minWidth.slice(2).replace(/\)$/,"");            
         } catch{
             minWidth = 50;
         }
         try{
-            minHeight = node.getAttribute("h2d-min-height");
+            minHeight = node.getAttribute("h2d-min-height").trim();
+            if (minHeight.startsWith("$(")) minHeight=minHeight.slice(2).replace(/\)$/,"");
         } catch{
             minHeight = 50;
         }
 
         return `ElevatedButton.styleFrom(`+
-            `shape: const CircleBorder(),`+
+            `shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),`+
             `padding: EdgeInsets.fromLTRB(${padding}, ${padding}, ${padding}, ${padding}),`+
-            `minimumSize: const Size(${minWidth}, ${minHeight}),`+
-            `fixedSize: const Size(${minWidth}, ${minHeight}),`+
+            `minimumSize: Size(${minWidth}, ${minHeight}),`+
+            `fixedSize: Size(${minWidth}, ${minHeight}),`+
             `backgroundColor: Colors.white,`+
             `elevation: 2,`+
         `)`;
@@ -177,7 +179,9 @@ function travelToEle(node,cssRules,dart,depth){
     }
     function processAttributes(node){
         if (node.getAttributeNames==null) return;
-        const NO_QUOTES = ["onPressed","onLongPress","width","height","decoration","style"]; // More
+        const NO_QUOTES = [
+            "onPressed","onLongPress","width","height","decoration","style"
+        ]; // More
         const SKIPS = ["if","for","id","class","paField"];
         
         var attrNames = node.getAttributeNames();
