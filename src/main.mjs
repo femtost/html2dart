@@ -337,8 +337,14 @@ function travelToEle(node,cssRules,dart,depth){
     else 
     // Any tag with 'for'
     if (node.getAttribute!=null && node.getAttribute("for")!=null){
-        // todo
-        // Currently: Use ListView and items in Dart code
+        var arr = node.getAttribute("for");
+        dart.code += `${indent}${arr}.map((x)=>\n`;
+
+        var clonedNode = node.cloneNode(true);
+        clonedNode.removeAttribute("for");
+        travelToEle(clonedNode,cssRules,dart,depth+1);            
+
+        dart.code += `${indent}).toList(),\n`;
     }
     else 
     // Any tag having children with 'pa-field'
@@ -423,10 +429,16 @@ function travelToEle(node,cssRules,dart,depth){
     else 
     // Text node    
     if (node.nodeType==TEXT_NODE){
-        if (node.textContent.trim().length>0){
+        if (node.textContent.trim().length>0){            
             var text = node.textContent.replaceAll('"','\\"')
                 .replaceAll("\r","\x20").replaceAll("\n","\x20").trim();
-            dart.code += `${indent}const Text("${text}"),\n`;
+
+            if (text.startsWith("$(")){
+                text = text.slice(2).trim().replace(/\)$/,"");
+                dart.code += `${indent}Text(${text}),\n`;
+            }
+            else 
+                dart.code += `${indent}const Text("${text}"),\n`;
         }
         // No other attributes
     } 
