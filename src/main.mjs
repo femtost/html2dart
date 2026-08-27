@@ -202,15 +202,25 @@ function travelToEle(node,cssRules,dart,depth){
 
             if (NO_QUOTES.includes(propName))
                 dart.code += `${indent2}${propName}: ${value},\n`;
-            else 
-                dart.code += `${indent2}${propName}: "${value}",\n`;
+            else {
+                if (value.startsWith("*"))
+                    dart.code += `${indent2}${propName}: ${value.slice(1).trim()},\n`;
+                else 
+                    dart.code += `${indent2}${propName}: "${value}",\n`;
+            }
         }
     }
-    const knownClasses = {body:"Container", div:"Row", span:"Container"};
+    const knownClasses = {
+        body:"Container", box:"Container", div:"Row", span:"Container"
+    };
     // These must have "child:"
-    const withChild = {"sized-box":true, "elevated-button":true, "span":true, "center":true};
+    const withChild = {
+        "sized-box":true, "elevated-button":true, span:true, center:true        
+    };
     // These must have "children:"
-    const withChildren = {row:true, div:true};
+    const withChildren = {
+        row:true, div:true, wrap:true
+    };
 
     // jsdom parse XML to lowercase tags, HTML to uppercase
     // Root tag
@@ -537,6 +547,12 @@ process.on('unhandledRejection', (reason, promise) => {
     const files = await glob(relativePath+'/**/*.html');
     log("HTML files found:");
     log(files);
+    log("****************************************");
+    log("NOTE: Under screen tag must be scaffold > body");
+    log("NOTE: Under component tag must be container > box");
+    log("NOTE: div tag to divide vertically");
+    log("NOTE: span tag to divide horizontally");
+    log("****************************************");
 
     chokidar.watch(relativePath, {
         usePolling: true // Equivalent to nodemon -L
