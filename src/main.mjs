@@ -282,6 +282,7 @@ function travelToEle(node,cssRules,dart,depth){
         let clause = node.getAttribute("if");
         let className = knownClasses[node.tagName] || tag2class(node.tagName);
         let postAttributeStr = "";
+        let withChildAutoRow = false;
 
         if (withChildren[node.tagName]==true){
             dart.code += `\n${indent}${clause}?\n${indent}${className}(\n`;
@@ -289,12 +290,20 @@ function travelToEle(node,cssRules,dart,depth){
         }
         else 
         if (withChild[node.tagName]==true){
-            if (node.childNodes.length>0 && node.innerHTML.trim().length>0){
+            if (node.tagName!="column" && node.children!=null && node.children.length>0 
+                    && (node.children[0].tagName=="div" || node.children[0].tagName=="row")){
+                let className = knownClasses[node.tagName] || tag2class(node.tagName);
                 dart.code += `\n${indent}${clause}?\n${indent}${className}(\n`;
-                postAttributeStr = `${indent}${TAB}child:\n`;
+                postAttributeStr = `${indent}${TAB}child: Column(children: __flatten([\n`;
+                withChildAutoRow = true;                
+            }else {
+                if (node.childNodes.length>0 && node.innerHTML.trim().length>0){
+                    dart.code += `\n${indent}${clause}?\n${indent}${className}(\n`;
+                    postAttributeStr = `${indent}${TAB}child:\n`;
+                }
+                else 
+                    dart.code += `\n${indent}${clause}?\n${indent}${className}(\n`;
             }
-            else 
-                dart.code += `\n${indent}${clause}?\n${indent}${className}(\n`;
         }
         else
             dart.code += `\n${indent}${clause}?\n${indent}${className}(\n`;
@@ -306,8 +315,12 @@ function travelToEle(node,cssRules,dart,depth){
         if (withChildren[node.tagName]==true)
             dart.code += `${indent}])):SizedBox(),\n`;
         else 
-        if (withChild[node.tagName]==true)
-            dart.code += `${indent}):SizedBox(),\n`;
+        if (withChild[node.tagName]==true){
+            if (withChildAutoRow==true)
+                dart.code += `${indent}]))):SizedBox(),\n`;
+            else
+                dart.code += `${indent}):SizedBox(),\n`;
+        }
         else 
             dart.code += `${indent}):SizedBox(),\n`;
     }
@@ -401,8 +414,9 @@ function travelToEle(node,cssRules,dart,depth){
     // Text node    
     if (node.nodeType==TEXT_NODE){
         if (node.textContent.trim().length>0){
-            dart.code += `${indent}const `+
-            `Text("${node.textContent.replaceAll('"','\\"')}"),\n`;
+            var text = node.textContent.replaceAll('"','\\"')
+                .replaceAll("\r","\x20").replaceAll("\n","\x20").trim();
+            dart.code += `${indent}const Text("${text}"),\n`;
         }
         // No other attributes
     } 
