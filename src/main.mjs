@@ -54,6 +54,20 @@ function travelToEle(node,cssRules,dart,depth){
     else 
         var indent = "\x20\x20\x20\x20".repeat(depth);
 
+    var nodeId="",nodeClass="";
+
+    if (node.getAttribute!=null && node.getAttribute("id")!=null)
+        nodeId = `#${node.getAttribute("id")}`;
+    if (node.getAttribute!=null && node.getAttribute("class")!=null){
+        let c = node.getAttribute("class").trim().replace(/[\s]{2,}/g,"\x20")
+            .replaceAll("\x20",".");
+        nodeClass = `.${c}`;
+    }
+    var tail = `// ${nodeId} ${nodeClass}`.replace(/[\s]{2,}/g,"\x20");
+
+    if (tail.trim()!="//")
+        dart.code += `${indent}${tail}\n`;
+
     function goDeeper(){
         for (let childNode of node.childNodes)
             // Those with pa-field are processed separately
@@ -215,7 +229,8 @@ function travelToEle(node,cssRules,dart,depth){
     };
     // These must have "child:"
     const withChild = {
-        "sized-box":true, "elevated-button":true, span:true, center:true        
+        "sized-box":true, "elevated-button":true, span:true, center:true,
+        "scrollbar":true, "single-child-scroll-view":true, container:true, box:true
     };
     // These must have "children:"
     const withChildren = {
@@ -368,11 +383,37 @@ function travelToEle(node,cssRules,dart,depth){
     }
     else    
     // Auto-column above div, row
+    // CONDITION: A DIV OR ROW TAG NOT IN COLUMN TAG
     if (node.tagName!="column" && node.children!=null && node.children.length>0 
             && (node.children[0].tagName=="div" || node.children[0].tagName=="row")){
         let className = knownClasses[node.tagName] || tag2class(node.tagName);
         dart.code += `${indent}${className}(\n`;
-        let postAttributeStr = `${indent}${TAB}child: Column(children: __flatten([\n`;
+        let postAttributeStr;
+
+        if (className!="Row")
+            postAttributeStr = `${indent}${TAB}child: Column(children: __flatten([\n`;
+        else 
+            postAttributeStr = `${indent}${TAB}children: [Column(children: __flatten([\n`;
+
+        processAttributes(node);
+        dart.code += postAttributeStr;
+        goDeeper();
+
+        if (className!="Row")
+            dart.code += `${indent}]))),\n`;
+        else 
+            dart.code += `${indent}]))]),\n`;
+    }
+    else 
+    // Auto-row if span has more than 1 child
+    // CONDITION: A SPAN OR CONTAINER TAG WITH MORE THAN 1 CHILD
+    if ((node.tagName=="span" || node.tagName=="container") && node.children!=null 
+            && node.children.length>1){
+        let className = knownClasses[node.tagName] || tag2class(node.tagName);
+        dart.code += `${indent}${className}(\n`;
+        let postAttributeStr;
+        postAttributeStr = `${indent}${TAB}child: Row(children: __flatten([\n`;
+
         processAttributes(node);
         dart.code += postAttributeStr;
         goDeeper();
@@ -411,11 +452,25 @@ function travelToEle(node,cssRules,dart,depth){
     else 
     // HTML -> Flutter tags    
     if (knownClasses[node.tagName] != null){
-        let className = knownClasses[node.tagName] || tag2class(node.tagName);
+        let className = knownClasses[node.tagName] || tag2class(node.tagName);        
         dart.code += `${indent}${className}(\n`;
-        processAttributes(node);
+        let postAttributeStr = "";
+
+        if (withChildren[node.tagName])
+            postAttributeStr = `${indent}${TAB}children: __flatten([\n`;
+        else if (withChild[node.tagName])
+            postAttributeStr = `${indent}${TAB}child:\n`;
+
+        processAttributes(node);        
+        dart.code += postAttributeStr;
         goDeeper();
-        dart.code += `${indent}),\n`;
+
+        if (withChildren[node.tagName])
+            dart.code += `${indent}])),\n`;
+        else if (withChild[node.tagName])
+            dart.code += `${indent}),\n`;
+        else 
+            dart.code += `${indent}),\n`;
     } 
     else 
     // Other elements    
