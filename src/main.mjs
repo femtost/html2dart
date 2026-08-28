@@ -195,7 +195,7 @@ function travelToEle(node,cssRules,dart,depth){
         if (node.getAttributeNames==null) return;
         const NO_QUOTES = [
             "onPressed","onLongPress","width","height","decoration","style","p",
-            "controller", "onTap"
+            "controller", "onTap", "thumbVisibility", "interactive"
         ]; // More
         const SKIPS = ["if","for","id","class","paField"];
         
@@ -384,7 +384,7 @@ function travelToEle(node,cssRules,dart,depth){
     else    
     // Auto-column above div, row
     // CONDITION: A DIV OR ROW TAG NOT IN COLUMN TAG
-    if (node.tagName!="column" && node.children!=null && node.children.length>0 
+    if (node.tagName!="column" && node.tagName!="wrap" && node.children!=null && node.children.length>0 
             && (node.children[0].tagName=="div" || node.children[0].tagName=="row")){
         let className = knownClasses[node.tagName] || tag2class(node.tagName);
         dart.code += `${indent}${className}(\n`;
@@ -485,15 +485,21 @@ function travelToEle(node,cssRules,dart,depth){
     // Text node    
     if (node.nodeType==TEXT_NODE){
         if (node.textContent.trim().length>0){            
-            var text = node.textContent.replaceAll('"','\\"')
+            var text = node.textContent.replace(/[\s]{2,}/g,"\x20")
                 .replaceAll("\r","\x20").replaceAll("\n","\x20").trim();
+            var styling = "";    
+
+            if (node.parentElement!=null && node.parentElement.tagName=="elevated-button")
+                styling = ",maxLines:1,overflow:TextOverflow.ellipsis";
 
             if (text.startsWith("$(")){
                 text = text.slice(2).trim().replace(/\)$/,"");
-                dart.code += `${indent}Text(${text}),\n`;
+                dart.code += `${indent}Text(${text}${styling}),\n`;
             }
-            else 
-                dart.code += `${indent}const Text("${text}"),\n`;
+            else {
+                text = text.replaceAll('"','\\"');
+                dart.code += `${indent}const Text("${text}"${styling}),\n`;
+            }
         }
         // No other attributes
     } 
@@ -619,6 +625,7 @@ process.on('unhandledRejection', (reason, promise) => {
     log("NOTE: Under component tag must be container > box");
     log("NOTE: div tag to divide vertically");
     log("NOTE: span tag to divide horizontally");
+    log("NOTE: Use $(..) for variable in HTML/CSS text");
     log("****************************************");
 
     chokidar.watch(relativePath, {
