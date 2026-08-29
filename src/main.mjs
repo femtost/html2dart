@@ -164,7 +164,8 @@ function travelToEle(node, cssRules, dart, depth) {
     // CSS 
     function cssKvToFlutterProp(node, attrName, propName, value) {
         const PROP_MAP = {
-            h2dWidth: "width", h2dHeight: "height", h2dColor: "color"
+            h2dWidth: "width", h2dHeight: "height", h2dColor: "color",
+            h2dLeft: "left", h2dRight: "right", h2dTop: "top", h2dBottom: "bottom"
         };
         const ATTR_SETS = [
             ["h2d-background-color", "h2d-border-radius"],
@@ -211,7 +212,8 @@ function travelToEle(node, cssRules, dart, depth) {
         if (node.getAttributeNames == null) return;
         const NO_QUOTES = [
             "onPressed", "onLongPress", "width", "height", "decoration", "style", "p",
-            "controller", "onTap", "thumbVisibility", "interactive", "onSecondaryTap"
+            "controller", "onTap", "thumbVisibility", "interactive", "onSecondaryTap",
+            "left", "top", "right", "bottom"
         ]; // More
         const SKIPS = ["if", "for", "id", "class", "paField", "h2dTextOverflow"];
         var indent2 = indent + "\x20".repeat(4);
@@ -229,7 +231,7 @@ function travelToEle(node, cssRules, dart, depth) {
                 dart.code += `${indent2}"${src}",\n`;
 
             if (node.tagName == "img-net") {
-                var w=50, h=50;
+                var w = 50, h = 50;
                 if (node.getAttribute("width") != null) w = node.getAttribute("width");
                 if (node.getAttribute("h2d-width") != null) w = node.getAttribute("h2d-width");
                 if (node.getAttribute("height") != null) h = node.getAttribute("height");
@@ -280,19 +282,31 @@ function travelToEle(node, cssRules, dart, depth) {
         }
     }
     const knownClasses = {
-        body: "Container", box: "Container", div: "Row", span: "Container",
+        body: "Stack", box: "Container", div: "Row", span: "Container",
         "img-asset": "Image.asset", "img-net": "Image.network"
     };
     // These must have "child:"
     const withChild = {
         "sized-box": true, "elevated-button": true, span: true, center: true,
-        "scrollbar": true, "single-child-scroll-view": true, container: true, box: true,
-        "gesture-detector":true
+        "scrollbar": true, "single-child-scroll-view": true, container: true,
+        "gesture-detector": true, positioned: true, box: true
     };
     // These must have "children:"
     const withChildren = {
-        row: true, div: true, wrap: true, column: true
+        row: true, div: true, wrap: true, column: true, stack: true, body: true
     };
+    const DEBUG = true;
+
+    function logDebugInfo(prefix, node) {
+        if (node.getAttribute != null && node.getAttribute("class") != null)
+            var classes = node.getAttribute("class").replaceAll("\x20", ".");
+        else
+            var classes = "";
+
+        if (DEBUG == true && node.getAttribute != null)
+            log(`${prefix} ${node.tagName} #${node.getAttribute ? node.getAttribute("id") : ""} ` +
+                `.${classes}`);
+    }
 
     // jsdom parse XML to lowercase tags, HTML to uppercase
     // Root tag
@@ -301,16 +315,19 @@ function travelToEle(node, cssRules, dart, depth) {
         goDeeper();
 
     } else if (node.tagName == "import") {
+        logDebugInfo("IMPORT", node);
         // Import tags
         let packagePath = node.getAttribute("package");
         dart.code += `import "${packagePath}";\n`;
         // No other attributes
 
-    } else if (node.tagName=="tag-def"){
+    } else if (node.tagName == "tag-def") {
+        logDebugInfo("TAG-DEF", node);
         // Ignore, already parsed
-        log("Already parsed tag-def",node.getAttribute("name"));
+        log("Already parsed tag-def", node.getAttribute("name"));
 
     } else if (node.getAttribute != null && node.getAttribute("with") != null) {
+        logDebugInfo("FUNC", node);
         // Function tag
         var paramNames = node.getAttribute("with").trim().replace(/[\s]{2,}/g, "\x20").split("\x20");
         var returnClass = tag2class(node.children[0].tagName);
@@ -327,7 +344,8 @@ function travelToEle(node, cssRules, dart, depth) {
         // No other attributes
 
     } else if (node.tagName == "scaffold") {
-        // Screen scaffold
+        logDebugInfo("BODY", node);
+        // SCREEN scaffold
         dart.code += `${indent}Scaffold(body:\n`;
         goDeeper();
         // No other attributes
@@ -343,7 +361,8 @@ function travelToEle(node, cssRules, dart, depth) {
             `}\n// EOF\n`;
 
     } else if (node.tagName == "container" && depth == 1) {
-        // Component container
+        logDebugInfo("BOX", node);
+        // COMPONENT container
         dart.code += `${indent}Container(child:\n`;
         goDeeper();
         // No other attributes
@@ -359,6 +378,7 @@ function travelToEle(node, cssRules, dart, depth) {
             `}\n// EOF\n`;
 
     } else if (node.getAttribute != null && node.getAttribute("if") != null) {
+        logDebugInfo("IF", node);
         // Any tag with 'if'
         let clause = node.getAttribute("if");
         let className = knownClasses[node.tagName] || tag2class(node.tagName);
@@ -406,6 +426,7 @@ function travelToEle(node, cssRules, dart, depth) {
                 dart.code += `${indent}):SizedBox(),\n`;
 
     } else if (node.getAttribute != null && node.getAttribute("for") != null) {
+        logDebugInfo("FOR", node);
         // Any tag with 'for'
         var arr = node.getAttribute("for");
         dart.code += `${indent}${arr}.map((x)=>\n`;
@@ -417,6 +438,7 @@ function travelToEle(node, cssRules, dart, depth) {
         dart.code += `${indent}).toList(),\n`;
 
     } else if (hasChildrenWithPaField(node)) {
+        logDebugInfo("PA-FIELD", node);
         // Any tag having children with 'pa-field'
         let tab = "\x20".repeat(4);
         let className = knownClasses[node.tagName] || tag2class(node.tagName);
@@ -435,14 +457,17 @@ function travelToEle(node, cssRules, dart, depth) {
         // Upper tier of DFS, processAttributes inside travelToEle again.
         dart.code += `${indent}),\n`;
 
-    } else if (node.tagName != "column" && node.tagName != "wrap" && node.children != null && node.children.length > 0 && (node.children[0].tagName == "div" || node.children[0].tagName == "row")) {
+    } else if (node.tagName != "column" && node.tagName != "wrap" && node.tagName != "body"
+        && node.children != null && node.children.length > 0
+        && (node.children[0].tagName == "div" || node.children[0].tagName == "row")) {
+        logDebugInfo("AUTO-COLUMN", node);
         // Auto-column above div, row
         // CONDITION: A DIV OR ROW TAG NOT IN COLUMN TAG
         let className = knownClasses[node.tagName] || tag2class(node.tagName);
         dart.code += `${indent}${className}(\n`;
         let postAttributeStr;
 
-        if (className != "Row")
+        if (className != "Row" && className != "Stack")
             postAttributeStr = `${indent}${TAB}child: Column(children: __flatten([\n`;
         else
             postAttributeStr = `${indent}${TAB}children: [Column(children: __flatten([\n`;
@@ -451,13 +476,14 @@ function travelToEle(node, cssRules, dart, depth) {
         dart.code += postAttributeStr;
         goDeeper();
 
-        if (className != "Row")
+        if (className != "Row" && className != "Stack")
             dart.code += `${indent}]))),\n`;
         else
             dart.code += `${indent}]))]),\n`;
 
     } else if ((node.tagName == "span" || node.tagName == "container") && node.children != null
         && node.children.length > 1) {
+        logDebugInfo("AUTO-ROW", node);
         // Auto-row if span has more than 1 child
         // CONDITION: A SPAN OR CONTAINER TAG WITH MORE THAN 1 CHILD
         let className = knownClasses[node.tagName] || tag2class(node.tagName);
@@ -471,6 +497,7 @@ function travelToEle(node, cssRules, dart, depth) {
         dart.code += `${indent}]))),\n`;
 
     } else if (withChild[node.tagName] != null) {
+        logDebugInfo("WITH-CHILD", node);
         // Those with child (no children prop)
         let className = knownClasses[node.tagName] || tag2class(node.tagName);
 
@@ -489,16 +516,26 @@ function travelToEle(node, cssRules, dart, depth) {
         }
 
     } else if (withChildren[node.tagName] != null) {
+        logDebugInfo("WITH-CHILDREN", node);
         // Those with children
         let className = knownClasses[node.tagName] || tag2class(node.tagName);
+
+        if (node.tagName=="box"){
+            className = `SizedBox.expand(child:` + className;
+        }
         dart.code += `${indent}${className}(\n`;
         let postAttributeStr = `${indent}${TAB}children: __flatten([\n`;
         processAttributes(node);
         dart.code += postAttributeStr;
         goDeeper();
-        dart.code += `${indent}])),\n`;
+
+        if (node.tagName=="box")
+            dart.code += `${indent}]))),\n`;
+        else 
+            dart.code += `${indent}])),\n`;
 
     } else if (knownClasses[node.tagName] != null) {
+        logDebugInfo("TAG-TO-CLASS", node);
         // HTML -> Flutter tags    
         let className = knownClasses[node.tagName] || tag2class(node.tagName);
         dart.code += `${indent}${className}(\n`;
@@ -521,6 +558,7 @@ function travelToEle(node, cssRules, dart, depth) {
             dart.code += `${indent}),\n`;
 
     } else if (node.nodeType == ELEMENT_NODE) {
+        logDebugInfo("ELEMENT", node);
         // Other elements   
         let className = knownClasses[node.tagName] || tag2class(node.tagName);
         dart.code += `${indent}${className}(\n`;
@@ -529,6 +567,7 @@ function travelToEle(node, cssRules, dart, depth) {
         dart.code += `${indent}),\n`;
 
     } else if (node.nodeType == TEXT_NODE) {
+        logDebugInfo("TEXT", node);
         // Text node    
         if (node.textContent.trim().length > 0) {
             var text = node.textContent.replace(/[\s]{2,}/g, "\x20")
@@ -537,7 +576,7 @@ function travelToEle(node, cssRules, dart, depth) {
 
             if (node.parentElement != null && (node.parentElement.tagName == "elevated-button" ||
                 node.parentElement.getAttribute("h2d-text-overflow") == "ellipsis"
-            )){
+            )) {
                 styling = ",maxLines:1,overflow:TextOverflow.ellipsis";
             }
 
@@ -553,6 +592,7 @@ function travelToEle(node, cssRules, dart, depth) {
         // No other attributes
 
     } else if (node.nodeType == COMMENT_NODE) {
+        logDebugInfo("COMMENT", node);
         // Comment node    
         dart.code += `${indent}/*${node.textContent}*/\n`;
         // No other attributes
@@ -588,15 +628,15 @@ function convertToDart(htmlFilePath, cssFilePath, dartFilePath) {
            <main-ui-view with=...*/
 
     // Parse tag-def
-    var tagDefs = [...rootEle.querySelectorAll("tag-def")];           
+    var tagDefs = [...rootEle.querySelectorAll("tag-def")];
     var tagDefMap = {};
 
     for (let def of tagDefs) {
-        tagDefMap[def.getAttribute("name")]=def.children[0];
+        tagDefMap[def.getAttribute("name")] = def.children[0];
     }
-    for (let tagName of Object.keys(tagDefMap)){
+    for (let tagName of Object.keys(tagDefMap)) {
         let nodes = [...rootEle.querySelectorAll(tagName)];
-        log(tagName,"->",nodes.length,"nodes");
+        log(tagName, "->", nodes.length, "nodes");
 
         for (let node of nodes)
             node.replaceWith(tagDefMap[tagName]);
