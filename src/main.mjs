@@ -467,6 +467,7 @@ function travelToEle(node, cssRules, dart, depth) {
         dart.code += `${indent}${className}(\n`;
         let postAttributeStr;
 
+        // "Stack" condition is for if future 'box' tag to be Stack
         if (className != "Row" && className != "Stack")
             postAttributeStr = `${indent}${TAB}child: Column(children: __flatten([\n`;
         else
@@ -476,6 +477,7 @@ function travelToEle(node, cssRules, dart, depth) {
         dart.code += postAttributeStr;
         goDeeper();
 
+        // "Stack" condition is for if future 'box' tag to be Stack
         if (className != "Row" && className != "Stack")
             dart.code += `${indent}]))),\n`;
         else
