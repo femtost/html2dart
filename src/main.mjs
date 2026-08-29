@@ -202,7 +202,7 @@ function travelToEle(node, cssRules, dart, depth) {
         if (node.getAttributeNames == null) return;
         const NO_QUOTES = [
             "onPressed", "onLongPress", "width", "height", "decoration", "style", "p",
-            "controller", "onTap", "thumbVisibility", "interactive"
+            "controller", "onTap", "thumbVisibility", "interactive", "onSecondaryTap"
         ]; // More
         const SKIPS = ["if", "for", "id", "class", "paField", "h2dTextOverflow"];
         var indent2 = indent + "\x20".repeat(4);
