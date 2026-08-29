@@ -15,6 +15,7 @@ const TAB = "\x20".repeat(4);
 var ELEMENT_NODE;
 var TEXT_NODE;
 var COMMENT_NODE;
+var domNodes = {};
 
 var ____UTILS____;
 
@@ -49,6 +50,7 @@ function hasChildrenWithPaField(node) {
 
 // Travel to element in dom
 function travelToEle(node, cssRules, dart, depth) {
+    // Spacing
     if (depth < 0)
         var indent = "";
     else
@@ -56,6 +58,7 @@ function travelToEle(node, cssRules, dart, depth) {
 
     var nodeId = "", nodeClass = "";
 
+    // Marking in generated code
     if (node.getAttribute != null && node.getAttribute("id") != null)
         nodeId = `#${node.getAttribute("id")}`;
     if (node.getAttribute != null && node.getAttribute("class") != null) {
@@ -68,6 +71,7 @@ function travelToEle(node, cssRules, dart, depth) {
     if (tail.trim() != "//")
         dart.code += `${indent}${tail}\n`;
 
+    // Next level
     function goDeeper() {
         for (let childNode of node.childNodes)
             // Those with pa-field are processed separately
@@ -78,6 +82,7 @@ function travelToEle(node, cssRules, dart, depth) {
             else
                 travelToEle(childNode, cssRules, dart, depth + 1);
     }
+    // Make colour
     function processColor(color) {
         color = color.trim();
         if (!color.startsWith("#")) return color;
@@ -91,6 +96,7 @@ function travelToEle(node, cssRules, dart, depth) {
         // Unknown cases
         return color;
     }
+    // Deco
     function makeBoxDecoration(node) {
         var color, rValues;
 
@@ -117,6 +123,7 @@ function travelToEle(node, cssRules, dart, depth) {
             `BorderRadius.only(topLeft: Radius.circular(${b1}), topRight: Radius.circular(${b2}), ` +
             `bottomRight: Radius.circular(${b3}), bottomLeft: Radius.circular(${b4})))`;
     }
+    // Style for EB
     function makeElevatedButtonStyle(node) {
         var padding, minWidth, minHeight, textAlign;
 
@@ -154,6 +161,7 @@ function travelToEle(node, cssRules, dart, depth) {
             `elevation: 2,${textAlign}` +
             `)`;
     }
+    // CSS 
     function cssKvToFlutterProp(node, attrName, propName, value) {
         const PROP_MAP = {
             h2dWidth: "width", h2dHeight: "height", h2dColor: "color"
@@ -198,6 +206,7 @@ function travelToEle(node, cssRules, dart, depth) {
         // Unknown cases
         return [propName, value, []];
     }
+    // Tag attributes
     function processAttributes(node) {
         if (node.getAttributeNames == null) return;
         const NO_QUOTES = [
@@ -296,6 +305,10 @@ function travelToEle(node, cssRules, dart, depth) {
         let packagePath = node.getAttribute("package");
         dart.code += `import "${packagePath}";\n`;
         // No other attributes
+
+    } else if (node.tagName=="tag-def"){
+        // Ignore, already parsed
+        log("Already parsed tag-def",node.getAttribute("name"));
 
     } else if (node.getAttribute != null && node.getAttribute("with") != null) {
         // Function tag
@@ -573,6 +586,21 @@ function convertToDart(htmlFilePath, cssFilePath, dartFilePath) {
            <import package="flutter/material.dart">
            <import package="flutter/cupertino.dart">
            <main-ui-view with=...*/
+
+    // Parse tag-def
+    var tagDefs = [...rootEle.querySelectorAll("tag-def")];           
+    var tagDefMap = {};
+
+    for (let def of tagDefs) {
+        tagDefMap[def.getAttribute("name")]=def.children[0];
+    }
+    for (let tagName of Object.keys(tagDefMap)){
+        let nodes = [...rootEle.querySelectorAll(tagName)];
+        log(tagName,"->",nodes.length,"nodes");
+
+        for (let node of nodes)
+            node.replaceWith(tagDefMap[tagName]);
+    }
 
     // CSS
     log("Parsing CSS...");
