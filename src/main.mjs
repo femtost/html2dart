@@ -113,12 +113,20 @@ function travelToEle(node, cssRules, dart, depth) {
         if (value.indexOf("\x20") == -1)
             return `EdgeInsets.all(${value})`;
 
-        value = value.trim().replace(/[\s]{2,}/g,"\x20");
-        var top = value[0]; // CSS counts from top clockwise
-        var right = value[1];
-        var bottom = value[2];
-        var left = value[3];
+        var values = value.trim().replace(/[\s]{2,}/g,"\x20").split("\x20");
+        var top = values[0]; // CSS counts from top clockwise
+        var right = values[1];
+        var bottom = values[2];
+        var left = values[3];
         return `EdgeInsets.fromLTRB(${left},${top},${right},${bottom})`;
+    }
+    function textAlignToFlutter(value){
+        if (value=="left")
+            return "Alignment.centerLeft";
+        if (value=="right")
+            return "Alignment.centerRight";
+
+        return "Alignment.center";
     }
     // Deco
     function makeBoxDecoration(node) {
@@ -183,7 +191,7 @@ function travelToEle(node, cssRules, dart, depth) {
         const PROP_MAP = {
             h2dWidth: "width", h2dHeight: "height", h2dColor: "color",
             h2dLeft: "left", h2dRight: "right", h2dTop: "top", h2dBottom: "bottom",
-            h2dPadding: "padding", h2dBackgroundColor: "color"
+            h2dPadding: "padding", h2dBackgroundColor: "color", h2dTextAlign:"alignment"
         };
         const ATTR_SETS = [
             ["h2d-background-color", "h2d-border-radius"],
@@ -233,6 +241,8 @@ function travelToEle(node, cssRules, dart, depth) {
                 value = colorToFlutter(value);
             if (propName=="padding")
                 value = paddingToFlutter(value);
+            if (propName=="alignment")
+                value = textAlignToFlutter(value);
 
             return [propName, value, []];
         }
@@ -243,12 +253,14 @@ function travelToEle(node, cssRules, dart, depth) {
     // Tag attributes
     function processAttributes(node) {
         if (node.getAttributeNames == null) return;
-        const NO_QUOTES = [
+        const NO_QUOTES = [ // Flutter props
             "onPressed", "onLongPress", "width", "height", "decoration", "style", "p",
             "controller", "onTap", "thumbVisibility", "interactive", "onSecondaryTap",
-            "left", "top", "right", "bottom", "color", "padding"
+            "left", "top", "right", "bottom", "color", "padding", "alignment"
         ]; // More
-        const SKIPS = ["if", "for", "id", "class", "paField", "h2dTextOverflow"];
+        const SKIPS = [ // Tag attributes
+            "if", "for", "id", "class", "paField", "h2dTextOverflow"
+        ];
         var indent2 = indent + "\x20".repeat(4);
 
         // Special positioned param, must go before other props
@@ -322,7 +334,8 @@ function travelToEle(node, cssRules, dart, depth) {
     const withChild = {
         "sized-box": true, "elevated-button": true, span: true, center: true,
         "scrollbar": true, "single-child-scroll-view": true, container: true,
-        "gesture-detector": true, positioned: true, box: true, tooltip: true
+        "gesture-detector": true, positioned: true, box: true, tooltip: true, "text-button":true,
+        align:true 
     };
     // These must have "children:"
     const withChildren = {
