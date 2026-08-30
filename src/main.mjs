@@ -96,18 +96,35 @@ function travelToEle(node, cssRules, dart, depth) {
         // Unknown cases
         return color;
     }
-    // Deco
-    function makeBoxDecoration(node) {
-        var color, rValues;
+    function colorToFlutter(cssColor){
+        var color;
 
         try {
-            color = processColor(node.getAttribute("h2d-background-color"));
+            color = processColor(cssColor);
             color = color.startsWith("#") ?
                 `Color(0x${color.slice(1).toUpperCase()})`
                 : `Colors.${color.toLowerCase()}`;
         } catch {
             color = "Colors.white";
         }
+        return color;
+    }
+    function paddingToFlutter(value){
+        if (value.indexOf("\x20") == -1)
+            return `EdgeInsets.all(${value})`;
+
+        value = value.trim().replace(/[\s]{2,}/g,"\x20");
+        var top = value[0]; // CSS counts from top clockwise
+        var right = value[1];
+        var bottom = value[2];
+        var left = value[3];
+        return `EdgeInsets.fromLTRB(${left},${top},${right},${bottom})`;
+    }
+    // Deco
+    function makeBoxDecoration(node) {
+        var color, rValues;
+        color = colorToFlutter(node.getAttribute("h2d-background-color"));        
+        
         try {
             rValues = node.getAttribute("h2d-border-radius").trim().replace(/[\s]{2,}/g, "\x20");
         } catch {
@@ -165,20 +182,46 @@ function travelToEle(node, cssRules, dart, depth) {
     function cssKvToFlutterProp(node, attrName, propName, value) {
         const PROP_MAP = {
             h2dWidth: "width", h2dHeight: "height", h2dColor: "color",
-            h2dLeft: "left", h2dRight: "right", h2dTop: "top", h2dBottom: "bottom"
+            h2dLeft: "left", h2dRight: "right", h2dTop: "top", h2dBottom: "bottom",
+            h2dPadding: "padding", h2dBackgroundColor: "color"
         };
         const ATTR_SETS = [
             ["h2d-background-color", "h2d-border-radius"],
             ["h2d-padding", "h2d-min-width", "h2d-min-height"]
         ];
-        function getAttrSet(attrName) {
+        function getAttrSet(node, attrName) {
             for (let s of ATTR_SETS)
-                if (s.includes(attrName)) return s;
+                if (s.includes(attrName)) {
+                    // Count to see if a full set ready
+                    var count = 0;
+
+                    for (let attr of s)
+                        if (node.getAttribute(attr) != null)
+                            count++;
+
+                    if (count == s.length) return s;
+                }
 
             return null;
         }
 
-        // Single value
+        // Set of attributes
+        // Prioritize sets first
+        var set = getAttrSet(node, attrName);
+
+        if (set != null) {
+            // BoxDecoration
+            if (set.includes("h2d-background-color") || set.includes("h2d-border-radius"))
+                return ["decoration", makeBoxDecoration(node), set];
+            // ElevatedButton.styleFrom
+            else if (node.tagName == "elevated-button" &&
+                (set.includes("h2d-padding") || set.includes("h2d-min-width")
+                    || set.includes("h2d-min-height"))) {
+                return ["style", makeElevatedButtonStyle(node), set];
+            }
+        }
+
+        // Single value last
         if (PROP_MAP[propName] != null) {
             propName = PROP_MAP[propName];
             value = value.replaceAll('"', '\\"');
@@ -186,22 +229,12 @@ function travelToEle(node, cssRules, dart, depth) {
             if (value.trim().startsWith("$(")) {
                 value = value.trim().slice(2).replace(/\)$/, "");
             }
-            value = processColor(value);
+            if (propName=="color")
+                value = colorToFlutter(value);
+            if (propName=="padding")
+                value = paddingToFlutter(value);
+
             return [propName, value, []];
-        }
-
-        // Set of attributes
-        var set = getAttrSet(attrName);
-
-        if (set != null) {
-            if (set.includes("h2d-background-color") || set.includes("h2d-border-radius"))
-                return ["decoration", makeBoxDecoration(node), set];
-            else
-                if (node.tagName == "elevated-button" &&
-                    (set.includes("h2d-padding") || set.includes("h2d-min-width")
-                        || set.includes("h2d-min-height"))) {
-                    return ["style", makeElevatedButtonStyle(node), set];
-                }
         }
 
         // Unknown cases
@@ -213,7 +246,7 @@ function travelToEle(node, cssRules, dart, depth) {
         const NO_QUOTES = [
             "onPressed", "onLongPress", "width", "height", "decoration", "style", "p",
             "controller", "onTap", "thumbVisibility", "interactive", "onSecondaryTap",
-            "left", "top", "right", "bottom"
+            "left", "top", "right", "bottom", "color", "padding"
         ]; // More
         const SKIPS = ["if", "for", "id", "class", "paField", "h2dTextOverflow"];
         var indent2 = indent + "\x20".repeat(4);
@@ -289,7 +322,7 @@ function travelToEle(node, cssRules, dart, depth) {
     const withChild = {
         "sized-box": true, "elevated-button": true, span: true, center: true,
         "scrollbar": true, "single-child-scroll-view": true, container: true,
-        "gesture-detector": true, positioned: true, box: true
+        "gesture-detector": true, positioned: true, box: true, tooltip: true
     };
     // These must have "children:"
     const withChildren = {
@@ -522,7 +555,7 @@ function travelToEle(node, cssRules, dart, depth) {
         // Those with children
         let className = knownClasses[node.tagName] || tag2class(node.tagName);
 
-        if (node.tagName=="box"){
+        if (node.tagName == "box") {
             className = `SizedBox.expand(child:` + className;
         }
         dart.code += `${indent}${className}(\n`;
@@ -531,9 +564,9 @@ function travelToEle(node, cssRules, dart, depth) {
         dart.code += postAttributeStr;
         goDeeper();
 
-        if (node.tagName=="box")
+        if (node.tagName == "box")
             dart.code += `${indent}]))),\n`;
-        else 
+        else
             dart.code += `${indent}])),\n`;
 
     } else if (knownClasses[node.tagName] != null) {
