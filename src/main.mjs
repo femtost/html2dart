@@ -53,21 +53,20 @@ async function fileExists(path) {
 var ____Dom____;
 
 // Tag name to class name
-function tag2class(tagName) {
-    if (tagName == "SPAN") return "Container";
+function tag2func(tagName) {
     var tokens = tagName.toLowerCase().trim().split("-");
     var className = [];
 
     for (let i = 0; i < tokens.length; i++) {
         className.push(tokens[i][0].toUpperCase() + tokens[i].substring(1));
     }
-    return className.join("");
+    var str = className.join("");
+    return str.slice(0,1).toLowerCase() + str.slice(1);
 }
 
 // Tag attribute name to class prop name
 function attr2prop(attrName) {
-    var temp = tag2class(attrName);
-    return temp.substring(0, 1).toLowerCase() + temp.slice(1);
+    return tag2func(attrName);
 }
 
 // Get node id and classes
@@ -157,20 +156,103 @@ function comma(node) {
 function transformClick(node, attr, value) {
     if (node.tagName == "BUTTON") {
         return [true, "onPressed", value];
+    }else if (node.tagName=="A"){
+        return [false, "onPressed",value];
     }
 
     return [false, attr, value];
 }
 
+// Transform 'rightclick' attribute
+function transformRightClick(node, attr, value) {
+    if (node.tagName == "BUTTON") {
+        return [true, "onLongPress", value];
+    }else if (node.tagName=="A"){
+        // todo
+    }
+
+    return [false, attr, value];
+}
+
+// Make decoration prop for Container
+function makeDecoration(node,attr,value){
+    var backgroundColor = node.getAttribute("h2d-background-color") ?? "white";
+    var borderRadius = node.getAttribute("h2d-border-radius") ?? "0";
+    var color = colorToFlutter(backgroundColor);
+    var r = borderRadius.trim().replace(/[\s]{2,}/g,"\x20");
+    var rTL, rTR, rBR, rBL;
+
+    if (r.indexOf("\x20") >= 0){
+        let toks = r.split("\x20");
+        // CSS order: topleft corner first and go clockwise
+        rTL = toks[0]; rTR = toks[1]; rBR = toks[2]; rBL = toks[3];
+        r = null;
+    }
+
+    if (r != null)
+        var outValue = `BoxDecoration(color: ${color}, borderRadius: BorderRadius.only(topLeft: Radius.circular(${r}), topRight: Radius.circular(${r}), bottomRight: Radius.circular(${r}), bottomLeft: Radius.circular(${r})))`;
+    else 
+        var outValue = `BoxDecoration(color: ${color}, borderRadius: BorderRadius.only(topLeft: Radius.circular(${rTL}), topRight: Radius.circular(${rTR}), bottomRight: Radius.circular(${rBR}), bottomLeft: Radius.circular(${rBL})))`;
+
+    node.setAttribute("h2d-background-color-processed","yes");
+    node.setAttribute("h2d-border-radius-processed","yes");
+    return [false,"decoration",outValue];
+}
+
+// Make padding for container
+function makePadding(node,attr, value){
+    var p = node.getAttribute("h2d-padding") ?? "0";
+    var left,top,right,bottom;
+
+    if (p.trim().indexOf("\x20") >= 0){
+        let v = p.replace(/[\s]{2,}/g, "\x20").split("\x20");
+        let _;
+        [_,top] = parseText(v[0]);
+        [_,right] = parseText(v[1]);
+        [_,bottom] = parseText(v[2]);
+        [_,left] = parseText(v[3]);
+    }else{
+        top=p; right=p; bottom=p; left=p;
+    }
+
+    var outValue = `EdgeInsets.fromLTRB(${left},${top},${right},${bottom})`;
+    return [false,"padding",outValue];
+}
+
+// Process text-align
+function processButtonStyle(node,attr,value){
+    var align = node.getAttribute("h2d-text-align") ?? "left";
+    if (align=="left") align="centerLeft";
+    else if (align=="right") align="centerRight";
+    else if (align=="center") align="center";
+    else align="centerLeft";
+
+    var color = node.getAttribute("h2d-background-color") ?? "white";
+    color = colorToFlutter(color);
+
+    var outValue = `ElevatedButton.styleFrom(alignment:Alignment.${align},`+
+        `padding: EdgeInsets.fromLTRB(10,10,10,10),`+
+        `backgroundColor:${color})`;
+    return [true,"style",outValue];
+}
+
 // Transform attribute
 function transformAttribute(node, attr, value) {
-    const ATTR2PROP = {
+    const ATTR2PROP = { // No processing
         "h2d-width": "width", "h2d-height": "height"
     };
-    const NOQUOTE_ATTRS = ["h2d-width", "h2d-height"];
-    const NOQUOTE_PROPS = ["onPressed"];
+    const NOQUOTE_ATTRS = [
+        "h2d-width", "h2d-height", "h2d-background-color", "h2d-border-radius",
+        "h2d-padding", "controller"
+    ];
+    const NOQUOTE_PROPS = [
+        "onPressed", "decoration", "style", "controller", "onLongPress"
+    ];
     var attr2transform = {
-        "onclick": transformClick
+        "onclick": transformClick, "oncontextmenu": transformRightClick,
+        "h2d-background-color": makeDecoration,
+        "h2d-border-radius": makeDecoration, "h2d-padding": makePadding,
+        "h2d-text-align": processButtonStyle
     };
     var [todo, value] = parseText(node.getAttribute(attr));
     if (NOQUOTE_ATTRS.includes(attr)) todo = NO_QUOTES;
@@ -188,7 +270,9 @@ function transformAttribute(node, attr, value) {
 
 // Tag attributes
 function processAttributes(dom, node, cssRules, dart, depth) {
-    const IGNORES = ["id", "class", "if", "foreach"];
+    const IGNORES = [
+        "id", "class", "if", "foreach", "h2d-left", "h2d-top", "src", "h2d-text-overflow"
+    ];
     const EXP_ATTRS = ["onclick", "oncontextmenu"];
     var attrs = [...node.getAttributeNames()];
     var indent = node.indent;
@@ -196,6 +280,8 @@ function processAttributes(dom, node, cssRules, dart, depth) {
 
     for (let at of attrs) {
         at = at.toLowerCase();
+        if (at.endsWith("-processed")) continue;
+        if (node.hasAttribute(at+"-processed")) continue;
         if (IGNORES.includes(at)) continue;
         let attrValue = node.getAttribute(at);
         let [forChild, todo, propName, value] = transformAttribute(node, at, attrValue);
@@ -260,7 +346,7 @@ tagProcessors.BODY = function (dom, node, cssRules, dart, depth) {
         let str = `\n// Screen function\nScaffold ${func}({`;
         params = params.map(x => "required\x20" + x);
         str += params.join(",") + "}){\n";
-        str += `${indent}return Scaffold(body: Stack(children:[\n`;
+        str += `${indent}return Scaffold(body: SizedBox.expand(child: Stack(children:[\n`;
         dart.code += str;
 
     } else { // Regular div
@@ -274,10 +360,11 @@ tagProcessors.BODYtail = function (dom, node, cssRules, dart, depth) {
 
     // Top function
     if (func != null) {
-        dart.code += `${indent}]));\n}\n`;
+        dart.code += `${indent}])));\n}\n`;
 
         // Flatten for the case children:[someForEachHere...
         dart.code += `// Mimic flutter-view.io\n` +
+            `// Sometimes 'foreach' is inside 'children:[...]'\n`+
             `__flatten(List list) {\n` +
             `    return List<Widget>.from(list.expand((item) {\n` +
             `        return item is Iterable ? item : [item as Widget];\n` +
@@ -310,8 +397,14 @@ tagProcessors.DIV = function (dom, node, cssRules, dart, depth) {
         dart.code += str;
 
     } else { // Regular div
-        addMarker(dart, node);
-        let str = `${indent}Container(width:double.infinity,\n`;
+        addMarker(dart, node);        
+        let str;
+
+        if (node.hasAttribute("h2d-width"))
+            str = `${indent}Container(\n`;
+        else 
+            str = `${indent}Container(width:double.infinity,\n`;
+
         dart.code += str;
         processAttributes(dom, node, cssRules, dart, depth);
 
@@ -329,6 +422,7 @@ tagProcessors.DIVtail = function (dom, node, cssRules, dart, depth) {
 
         // Flatten for the case children:[someForEachHere...    
         dart.code += `// Mimic flutter-view.io\n` +
+            `// Sometimes 'foreach' is inside 'children:[...]'\n`+
             `__flatten(List list) {\n` +
             `    return List<Widget>.from(list.expand((item) {\n` +
             `        return item is Iterable ? item : [item as Widget];\n` +
@@ -379,13 +473,30 @@ tagProcessors.SPANtail = function (dom, node, cssRules, dart, depth) {
     dart.code += str;
 }
 
+// Process INPUT tag
+tagProcessors.INPUT = function (dom, node, cssRules, dart, depth) {
+    var indent = node.indent;
+
+    addMarker(dart, node);
+    var str = `${indent}TextField(\n`;
+    dart.code += str;
+    processAttributes(dom, node, cssRules, dart, depth);
+}
+tagProcessors.INPUTtail = function (dom, node, cssRules, dart, depth) {
+    var indent = node.indent;
+
+    var str = `${indent})${comma(node)}\n`;
+    dart.code += str;
+}
+
 // Process A tag
 tagProcessors.A = function (dom, node, cssRules, dart, depth) {
     var indent = node.indent;
 
     addMarker(dart, node);
-    var str = `${indent}TextButton(\n`;
+    var str = `${indent}TextButton(style:TextButton.styleFrom(minimumSize:Size(20,20)),\n`;
     dart.code += str;
+    node.setAttribute("h2d-text-align-processed","yes");
     processAttributes(dom, node, cssRules, dart, depth);
 
     var str = `${indent}${TAB}child:\n`;
@@ -409,24 +520,38 @@ tagProcessors.IMG = function (dom, node, cssRules, dart, depth) {
         src = src.slice("asset:".length);
         isAsset = true;
     }
+    if (fallbacksrc!=null)
+        fallbacksrc = fallbacksrc.slice("asset:".length);
 
     addMarker(dart, node);
     var str;
     var [todo, parsedSrc] = parseText(src);
 
+    var w = 50, h = 50;
+    if (node.getAttribute("width") != null) w = node.getAttribute("width");
+    if (node.getAttribute("h2d-width") != null) w = node.getAttribute("h2d-width");
+    if (node.getAttribute("height") != null) h = node.getAttribute("height");
+    if (node.getAttribute("h2d-height") != null) h = node.getAttribute("h2d-height");
+
     if (todo == NO_QUOTES) {
         if (isAsset)
-            str = `${indent}Image.asset(${parsedSrc}\n`;
+            str = `${indent}Image.asset(${parsedSrc},\n`;
         else
-            str = `${indent}Image.network(${parsedSrc}\n`;
+            str = `${indent}Image.network(${parsedSrc},`+
+            `webHtmlElementStrategy:WebHtmlElementStrategy.prefer,`+
+            `errorBuilder:(context,error,stackTrace){return Image.asset("${fallbacksrc}");},\n`;
     } else {
         if (isAsset)
-            str = `${indent}Image.asset("${parsedSrc}"\n`;
+            str = `${indent}Image.asset("${parsedSrc}",\n`;
         else
-            str = `${indent}Image.network("${parsedSrc}"\n`;
-    }
+            str = `${indent}Image.network("${parsedSrc}",`+
+            `webHtmlElementStrategy:WebHtmlElementStrategy.prefer,`+
+            `errorBuilder:(context,error,stackTrace){return Image.asset("${fallbacksrc}");},\n`;
+    }    
+    node.removeAttribute("fallbacksrc");
 
     dart.code += str;
+    processAttributes(dom, node, cssRules, dart, depth);
 }
 tagProcessors.IMGtail = function (dom, node, cssRules, dart, depth) {
     var indent = node.indent;
@@ -442,13 +567,19 @@ function processTextNode(dom, node, cssRules, dart, depth) {
     var text = node.textContent;
     var [todo, parsedText] = parseText(text);
 
+    if (node.parentElement.tagName=="BUTTON" 
+            || node.parentElement.getAttribute("h2d-text-overflow")=="ellipsis")
+        var ellipsis = ",maxLines:1,overflow:TextOverflow.ellipsis";
+    else 
+        var ellipsis = "";
+
     if (todo == WITH_QUOTES) {
         text = node.textContent.replaceAll("\n", "\x20").replace(/[\x20]{2,}/g, "\x20")
             .replaceAll('"', '\\"');
-        dart.code += `${indent}${TAB}Text("${text.trim()}")\n`;
+        dart.code += `${indent}${TAB}Text("${text.trim()}"${ellipsis})\n`;
     }
     else
-        dart.code += `${indent}${TAB}Text(${parsedText.trim()})\n`;
+        dart.code += `${indent}${TAB}Text(${parsedText.trim()}${ellipsis})\n`;
 }
 
 // Process comment node
@@ -480,6 +611,8 @@ function processImports(dom, root, dart) {
 // Process 'if' clause
 function processIfOnly(dom, node, cssRules, dart, depth) {
     var clause = node.getAttribute("if");
+    clause = clause.replaceAll("@@","&&");
+
     var indent = node.indent;
     dart.code += `\n${indent}${clause}?\n`;
 
@@ -499,6 +632,54 @@ function processForOnly(dom, node, cssRules, dart, depth) {
 function processIfAndFor(dom, node, cssRules, dart, depth) {
 }
 
+// Check if needed to add outer tag
+function checkToAddOuterTag(node){
+    var posAttrs = ["h2d-left", "h2d-top", "h2d-right", "h2d-bottom"];
+
+    for (let at of posAttrs)
+        if (node.hasAttribute(at)) return "Positioned";
+
+    return null;
+}
+
+// Open outer tag
+function openOuterTag(dom,node,cssRules,dart,depth,outerTag){
+    var indent = node.indent;
+    var [id,classes] = getNodeIdAndClasses(node);
+    dart.code += `\n${indent}// ${node.tagName} #${id} .${classes}\n`;
+    dart.code += `${indent}${outerTag}(`;
+
+    var left = node.getAttribute("h2d-left");
+    var top = node.getAttribute("h2d-top");
+    var [t1,leftValue] = parseText(left);
+    var [t2,topValue] = parseText(top);
+
+    if (outerTag=="Positioned"){
+        dart.code += `left:${leftValue}, top:${topValue}, child:\n`;
+    }
+}
+
+// Close outer tag
+function closeOuterTag(dom,node,cssRules,dart,depth,outerTag){
+    var indent = node.indent;
+    dart.code += `${indent}),\n`;
+}
+
+// Process component tag
+function processComponent(dom,node,cssRules,dart,depth){
+    var funcName = tag2func(node.tagName.toLowerCase());
+    var indent = node.indent;
+    dart.code += `${indent}${funcName}(`;
+    var names = node.getAttributeNames().filter(x=> x!="component");
+
+    var attrs = names.map(x=>{
+        var prop = attr2prop(x);
+        return prop+":"+prop;
+    });
+    var str = attrs.join(",");
+    dart.code += `${str})\n`;
+}
+
 // Travel to element in dom
 function travelToEle(dom, node, cssRules, dart, depth) {
     var nodeLoc = dom.nodeLocation(node);
@@ -510,7 +691,7 @@ function travelToEle(dom, node, cssRules, dart, depth) {
     else
         var indent = "\x20\x20\x20\x20".repeat(depth);
 
-    node.indent = indent;
+    node.indent = indent;    
 
     if (node.nodeType == ELEMENT_NODE) {
         var havingIfOnly = node.getAttribute("if") != null && node.getAttribute("foreach") == null;
@@ -522,14 +703,20 @@ function travelToEle(dom, node, cssRules, dart, depth) {
 
     if (node.nodeType == ELEMENT_NODE) {
         log(`${node.tagName}:${nodeLoc}`);
+        var outerTag = checkToAddOuterTag(node);
+        if (outerTag!=null) openOuterTag(dom,node,cssRules,dart,depth,outerTag);
 
         if (node.tagName == "BODY" && node.getAttribute("func") != null) {
             node.indent = TAB + node.indent;
             depth++;
         }
         if (typeof tagProcessors[node.tagName] != "function") {
-            log(`UNIMPLEMENTED TAG ${node.tagName}:${nodeLoc}`);
-            return;
+            if (node.getAttribute("component")!=null)
+                processComponent(dom,node,cssRules,dart,depth);
+            else {
+                log(`UNIMPLEMENTED TAG ${node.tagName}:${nodeLoc}`);
+                return;
+            }
         }
         // Logic
         if (havingIfOnly)
@@ -539,7 +726,8 @@ function travelToEle(dom, node, cssRules, dart, depth) {
         else if (havingIfAndFor)
             tailOfIfAndFor = processIfAndFor(dom, node, cssRules, dart, depth);
 
-        tagProcessors[node.tagName](dom, node, cssRules, dart, depth);
+        if (typeof tagProcessors[node.tagName] == "function")
+            tagProcessors[node.tagName](dom, node, cssRules, dart, depth);
     }
     else if (node.nodeType == TEXT_NODE)
         processTextNode(dom, node, cssRules, dart, depth);
@@ -551,11 +739,15 @@ function travelToEle(dom, node, cssRules, dart, depth) {
     for (let childNode of node.childNodes)
         travelToEle(dom, childNode, cssRules, dart, depth + 1);
 
-    if (node.nodeType == ELEMENT_NODE) {
-        tagProcessors[node.tagName + "tail"](dom, node, cssRules, dart, depth);
+    if (node.nodeType == ELEMENT_NODE) {        
+        if (typeof tagProcessors[node.tagName + "tail"] == "function"){
+            tagProcessors[node.tagName + "tail"](dom, node, cssRules, dart, depth);
 
-        if (havingLogicTail)
-            dart.code += `${indent}${tailOfIfAndFor}\n`;
+            if (havingLogicTail)
+                dart.code += `${indent}${tailOfIfAndFor}\n`;
+
+            if (outerTag!=null) closeOuterTag(dom,node,cssRules,dart,depth,outerTag);
+        }
     }
 }
 
