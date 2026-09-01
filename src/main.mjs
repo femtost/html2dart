@@ -1,3 +1,14 @@
+// HTML tag ref: https://www.w3schools.com/tags/
+// HTML attr ref: https://www.w3schools.com/tags/ref_attributes.asp
+// CSS ref: https://www.w3schools.com/cssref/index.php
+
+// New syntax in html
+// Tags: import, tagdef
+// New attributes: func, params, err-src
+// Evaluate value: $(...), 
+// it is parentheses coz '{}' errs in CSS, '[]' is array, '<>' is awkward,
+// and $(..) is read as 'take value of', value function.
+
 // Runtime
 import fs from "fs";
 
@@ -9,15 +20,37 @@ import { JSDOM } from 'jsdom';
 
 // Shorthands
 var log = console.log;
+var keys = Object.keys;
 
 // Globals
+const NO_QUOTES = "no-quotes";
+const WITH_QUOTES = "with-quotes";
+const CHILD_ATTR = "child-attr";
 const TAB = "\x20".repeat(4);
 var ELEMENT_NODE;
 var TEXT_NODE;
 var COMMENT_NODE;
-var domNodes = {};
 
 var ____UTILS____;
+var ____Miscs____;
+
+// Get file modified time
+async function getModifiedTime(filePath) {
+    const stat = await fs.promises.stat(filePath);
+    return stat.mtimeMs;
+}
+
+// Check if file exists
+async function fileExists(path) {
+    try {
+        await fs.promises.access(path);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+var ____Dom____;
 
 // Tag name to class name
 function tag2class(tagName) {
@@ -37,617 +70,492 @@ function attr2prop(attrName) {
     return temp.substring(0, 1).toLowerCase() + temp.slice(1);
 }
 
-// Check if node has children with pa-field
-function hasChildrenWithPaField(node) {
-    if (node.children == null || node.children.length == 0) return false;
+// Get node id and classes
+function getNodeIdAndClasses(node) {
+    var nodeId, nodeClass;
 
-    for (let c of node.children)
-        if (c.getAttribute != null && c.getAttribute("pa-field") != null)
-            return true;
+    if (node.getAttribute("id") != null)
+        nodeId = node.getAttribute("id").trim();
+    else
+        nodeId = "--";
 
-    return false;
+    if (node.getAttribute("class") != null)
+        nodeClass = node.getAttribute("class").trim()
+            .replace(/[\s]{2,}/g, "\x20").replaceAll("\x20", ".");
+    else
+        nodeClass = "--";
+
+    return [nodeId, nodeClass];
+}
+
+var ____CONVERSION____;
+var ____Tags____;
+var tagProcessors = {};
+
+// Add marker to output dart code
+function addMarker(dart, node) {
+    var indent = node.indent;
+    var [nodeId, nodeClass] = getNodeIdAndClasses(node);
+    var str = `${indent}// ${node.tagName} #${nodeId} .${nodeClass}\n`;
+    dart.code += str;
+}
+
+// Process text
+function parseText(text) {
+    text = text.trim();
+
+    if (text.startsWith("$("))
+        return [NO_QUOTES, text.slice(2).replace(/\)$/, "").trim()];
+    else
+        return [WITH_QUOTES, text];
+}
+
+// Make colour
+function processColor(color) {
+    color = color.trim();
+    if (!color.startsWith("#")) return color;
+
+    if (color.match(/^#[0-9A-Fa-f]{3}$/) != null) {
+        let char1 = color.slice(1, 2);
+        let char2 = color.slice(2, 3);
+        let char3 = color.slice(3, 4);
+        return "#" + char1.repeat(2) + char2.repeat(2) + char3.repeat(2);
+    }
+    // Unknown cases
+    return color;
+}
+
+// Convert CSS colour to Flutter value
+function colorToFlutter(cssColor) {
+    var color;
+
+    try {
+        color = processColor(cssColor);
+        color = color.startsWith("#") ?
+            `Color(0x${color.slice(1).toUpperCase()})`
+            : `Colors.${color.toLowerCase()}`;
+    } catch {
+        color = "Colors.white";
+    }
+    return color;
+}
+
+// Check to add a comma at tail of node
+function comma(node) {
+    var havingIfOnly = node.getAttribute("if") != null && node.getAttribute("foreach") == null;
+    var havingForOnly = node.getAttribute("if") == null && node.getAttribute("foreach") != null;
+    var havingIfAndFor = node.getAttribute("if") != null && node.getAttribute("foreach") != null;
+    var havingLogicTail = havingIfOnly == true || havingForOnly == true || havingIfAndFor == true;
+
+    if (havingIfOnly) return "";
+    if (havingForOnly) return ",";
+    if (havingIfAndFor) return ",";
+    return ",";
+}
+
+// Transform 'click' attribute, use onPressed or gesture tag wrapper
+function transformClick(node, attr, value) {
+    if (node.tagName == "BUTTON") {
+        return [true, "onPressed", value];
+    }
+
+    return [false, attr, value];
+}
+
+// Transform attribute
+function transformAttribute(node, attr, value) {
+    const ATTR2PROP = {
+        "h2d-width": "width", "h2d-height": "height"
+    };
+    const NOQUOTE_ATTRS = ["h2d-width", "h2d-height"];
+    const NOQUOTE_PROPS = ["onPressed"];
+    var attr2transform = {
+        "onclick": transformClick
+    };
+    var [todo, value] = parseText(node.getAttribute(attr));
+    if (NOQUOTE_ATTRS.includes(attr)) todo = NO_QUOTES;
+
+    if (ATTR2PROP[attr] != null) {
+        return [false, todo, ATTR2PROP[attr], value];
+    } else if (attr2transform[attr] != null) {
+        let [forChild, propName, value2] = attr2transform[attr](node, attr, value);
+        if (NOQUOTE_PROPS.includes(propName)) todo = NO_QUOTES;
+        return [forChild, todo, propName, value2];
+    } else {
+        return [false, todo, attr, value];
+    }
+}
+
+// Tag attributes
+function processAttributes(dom, node, cssRules, dart, depth) {
+    const IGNORES = ["id", "class", "if", "foreach"];
+    const EXP_ATTRS = ["onclick", "oncontextmenu"];
+    var attrs = [...node.getAttributeNames()];
+    var indent = node.indent;
+    var childAttrs = {};
+
+    for (let at of attrs) {
+        at = at.toLowerCase();
+        if (IGNORES.includes(at)) continue;
+        let attrValue = node.getAttribute(at);
+        let [forChild, todo, propName, value] = transformAttribute(node, at, attrValue);
+
+        if (forChild) {
+            if (todo == NO_QUOTES)
+                childAttrs[propName] = value;
+            else
+                childAttrs[propName] = '"' + value + '"';
+        }
+        else if (todo == NO_QUOTES)
+            dart.code += `${indent}${TAB}${propName}: ${value},\n`;
+        else {
+            value = value.replaceAll('"', '\\"');
+            dart.code += `${indent}${TAB}${propName}: "${value}",\n`;
+        }
+    }
+    return childAttrs;
+}
+
+// Make child attribute lines
+function makeChildAttrLines(indent, childAttrs) {
+    var childAttrLines = "";
+
+    if (childAttrs != null && keys(childAttrs).length > 0) {
+        for (let k in childAttrs) {
+            let v = childAttrs[k];
+            if (childAttrLines.length == 0) childAttrLines = "\n";
+            childAttrLines += `${indent}${TAB}${TAB}${k}: ${v},\n`;
+        }
+        childAttrLines += `${indent}${TAB}${TAB}`;
+    }
+    return childAttrLines;
+}
+
+// Process HTML tag
+tagProcessors.HTML = function (dom, node, cssRules, dart, depth) {
+}
+tagProcessors.HTMLtail = function (dom, node, cssRules, dart, depth) {
+}
+
+// Process HEAD tag
+tagProcessors.HEAD = function (dom, node, cssRules, dart, depth) {
+}
+tagProcessors.HEADtail = function (dom, node, cssRules, dart, depth) {
+}
+
+// Process BODY tag
+tagProcessors.BODY = function (dom, node, cssRules, dart, depth) {
+    var func = node.getAttribute("func");
+    var indent = node.indent;
+
+    // Top function 
+    if (func != null) {
+        let paramStr = node.getAttribute("params");
+
+        if (paramStr == null) {
+            log(`BAD FUNC TAG: BODY:${node.nodeLoc}, missing 'params'`);
+            return;
+        }
+        let params = paramStr.trim().replace(/[\s]{2,}/g, "\x20").split("\x20");
+        let str = `\n// Screen function\nScaffold ${func}({`;
+        params = params.map(x => "required\x20" + x);
+        str += params.join(",") + "}){\n";
+        str += `${indent}return Scaffold(body: Stack(children:[\n`;
+        dart.code += str;
+
+    } else { // Regular div
+        addMarker(dart, node);
+        // dart.code += `${indent}// WRONG BODY TAG HERE`;
+    }
+}
+tagProcessors.BODYtail = function (dom, node, cssRules, dart, depth) {
+    var func = node.getAttribute("func");
+    var indent = node.indent;
+
+    // Top function
+    if (func != null) {
+        dart.code += `${indent}]));\n}\n`;
+
+        // Flatten for the case children:[someForEachHere...
+        dart.code += `// Mimic flutter-view.io\n` +
+            `__flatten(List list) {\n` +
+            `    return List<Widget>.from(list.expand((item) {\n` +
+            `        return item is Iterable ? item : [item as Widget];\n` +
+            `    }));\n` +
+            `}\n` +
+            `// EOF\n`;
+    } else {
+        // Nothing here
+    }
+}
+
+// Process DIV tag
+tagProcessors.DIV = function (dom, node, cssRules, dart, depth) {
+    var func = node.getAttribute("func");
+    var indent = node.indent;
+
+    // Top function 
+    if (func != null) {
+        let paramStr = node.getAttribute("params");
+
+        if (paramStr == null) {
+            log(`BAD FUNC TAG: DIV:${node.nodeLoc}, missing 'params'`);
+            return;
+        }
+        let params = paramStr.trim().replace(/[\s]{2,}/g, "\x20").split("\x20");
+        let str = `\n// Component function\nContainer ${func}({`;
+        params = params.map(x => "required\x20" + x);
+        str += params.join(",") + "}){\n";
+        str += `${indent}return Container(child:\n`;
+        dart.code += str;
+
+    } else { // Regular div
+        addMarker(dart, node);
+        let str = `${indent}Container(width:double.infinity,\n`;
+        dart.code += str;
+        processAttributes(dom, node, cssRules, dart, depth);
+
+        str = `${indent}${TAB}child:Wrap(children:__flatten([\n`;
+        dart.code += str;
+    }
+}
+tagProcessors.DIVtail = function (dom, node, cssRules, dart, depth) {
+    var func = node.getAttribute("func");
+    var indent = node.indent;
+
+    // Top function
+    if (func != null) {
+        dart.code += `${indent});\n}\n`;
+
+        // Flatten for the case children:[someForEachHere...    
+        dart.code += `// Mimic flutter-view.io\n` +
+            `__flatten(List list) {\n` +
+            `    return List<Widget>.from(list.expand((item) {\n` +
+            `        return item is Iterable ? item : [item as Widget];\n` +
+            `    }));\n` +
+            `}\n` +
+            `// EOF\n`;
+    } else { // Regular div
+        let str = `${indent}])))${comma(node)}\n`;
+        dart.code += str;
+    }
+}
+
+// Process BUTTON tag
+tagProcessors.BUTTON = function (dom, node, cssRules, dart, depth) {
+    var indent = node.indent;
+
+    addMarker(dart, node);
+    var str = `${indent}Container(\n`;
+    dart.code += str;
+    var childAttrs = processAttributes(dom, node, cssRules, dart, depth);
+    var childAttrLines = makeChildAttrLines(indent, childAttrs);
+    var str = `${indent}${TAB}child: ElevatedButton(${childAttrLines}child: Wrap(children:__flatten([\n`;
+    dart.code += str;
+}
+tagProcessors.BUTTONtail = function (dom, node, cssRules, dart, depth) {
+    var indent = node.indent;
+
+    var str = `${indent}]))))${comma(node)}\n`;
+    dart.code += str;
+}
+
+// Process SPAN tag
+tagProcessors.SPAN = function (dom, node, cssRules, dart, depth) {
+    var indent = node.indent;
+
+    addMarker(dart, node);
+    var str = `${indent}Container(\n`;
+    dart.code += str;
+    processAttributes(dom, node, cssRules, dart, depth);
+
+    var str = `${indent}${TAB}child: Wrap(children:__flatten([\n`;
+    dart.code += str;
+}
+tagProcessors.SPANtail = function (dom, node, cssRules, dart, depth) {
+    var indent = node.indent;
+
+    var str = `${indent}])))${comma(node)}\n`;
+    dart.code += str;
+}
+
+// Process A tag
+tagProcessors.A = function (dom, node, cssRules, dart, depth) {
+    var indent = node.indent;
+
+    addMarker(dart, node);
+    var str = `${indent}TextButton(\n`;
+    dart.code += str;
+    processAttributes(dom, node, cssRules, dart, depth);
+
+    var str = `${indent}${TAB}child:\n`;
+    dart.code += str;
+}
+tagProcessors.Atail = function (dom, node, cssRules, dart, depth) {
+    var indent = node.indent;
+
+    var str = `${indent})${comma(node)}\n`;
+    dart.code += str;
+}
+
+// Process IMG tag
+tagProcessors.IMG = function (dom, node, cssRules, dart, depth) {
+    var indent = node.indent;
+    var src = node.getAttribute("src");
+    var fallbacksrc = node.getAttribute("fallbacksrc"); // Always asset:
+    var isAsset = false;
+
+    if (src.trim().toLowerCase().startsWith("asset:")) {
+        src = src.slice("asset:".length);
+        isAsset = true;
+    }
+
+    addMarker(dart, node);
+    var str;
+    var [todo, parsedSrc] = parseText(src);
+
+    if (todo == NO_QUOTES) {
+        if (isAsset)
+            str = `${indent}Image.asset(${parsedSrc}\n`;
+        else
+            str = `${indent}Image.network(${parsedSrc}\n`;
+    } else {
+        if (isAsset)
+            str = `${indent}Image.asset("${parsedSrc}"\n`;
+        else
+            str = `${indent}Image.network("${parsedSrc}"\n`;
+    }
+
+    dart.code += str;
+}
+tagProcessors.IMGtail = function (dom, node, cssRules, dart, depth) {
+    var indent = node.indent;
+
+    let str = `${indent})${comma(node)}\n`;
+    dart.code += str;
+}
+
+// Process text node
+function processTextNode(dom, node, cssRules, dart, depth) {
+    if (node.textContent.trim().length == 0) return;
+    var indent = node.indent;
+    var text = node.textContent;
+    var [todo, parsedText] = parseText(text);
+
+    if (todo == WITH_QUOTES) {
+        text = node.textContent.replaceAll("\n", "\x20").replace(/[\x20]{2,}/g, "\x20")
+            .replaceAll('"', '\\"');
+        dart.code += `${indent}${TAB}Text("${text.trim()}")\n`;
+    }
+    else
+        dart.code += `${indent}${TAB}Text(${parsedText.trim()})\n`;
+}
+
+// Process comment node
+function processCommentNode(dom, node, cssRules, dart, depth) {
+    if (node.textContent.trim().length == 0) return;
+    var indent = node.indent;
+    var text = node.textContent;
+    dart.code += `${indent}/*${text.trim()}*/\n`;
+}
+
+var ____Main_Conv____;
+
+// Process import tags
+function processImports(dom, root, dart) {
+    var eles = [...root.querySelectorAll("import")];
+
+    for (let ele of eles) {
+        let path = ele.getAttribute("path");
+
+        if (path == null) {
+            log(`BAD IMPORT: Line: ${dom.nodeLocation(ele).startLine}`);
+            continue;
+        }
+        dart.code += `import "${path}";\n`;
+        ele.remove();
+    }
+}
+
+// Process 'if' clause
+function processIfOnly(dom, node, cssRules, dart, depth) {
+    var clause = node.getAttribute("if");
+    var indent = node.indent;
+    dart.code += `\n${indent}${clause}?\n`;
+
+    return `:SizedBox(),`;
+}
+
+// Process 'foreach' clause
+function processForOnly(dom, node, cssRules, dart, depth) {
+    var arr = node.getAttribute("foreach");
+    var indent = node.indent;
+    dart.code += `\n${indent}${arr}.map((x)=>\n`;
+
+    return `),`;
+}
+
+// Process 'if' clause and 'foreach' clause on the same tag
+function processIfAndFor(dom, node, cssRules, dart, depth) {
 }
 
 // Travel to element in dom
-function travelToEle(node, cssRules, dart, depth) {
+function travelToEle(dom, node, cssRules, dart, depth) {
+    var nodeLoc = dom.nodeLocation(node);
+    nodeLoc = nodeLoc ? nodeLoc.startLine : "?";
+    node.nodeLoc = nodeLoc;
     // Spacing
     if (depth < 0)
         var indent = "";
     else
         var indent = "\x20\x20\x20\x20".repeat(depth);
 
-    var nodeId = "", nodeClass = "";
+    node.indent = indent;
 
-    // Marking in generated code
-    if (node.getAttribute != null && node.getAttribute("id") != null)
-        nodeId = `#${node.getAttribute("id")}`;
-    if (node.getAttribute != null && node.getAttribute("class") != null) {
-        let c = node.getAttribute("class").trim().replace(/[\s]{2,}/g, "\x20")
-            .replaceAll("\x20", ".");
-        nodeClass = `.${c}`;
-    }
-    var tail = `// ${nodeId} ${nodeClass}`.replace(/[\s]{2,}/g, "\x20");
-
-    if (tail.trim() != "//")
-        dart.code += `${indent}${tail}\n`;
-
-    // Next level
-    function goDeeper() {
-        for (let childNode of node.childNodes)
-            // Those with pa-field are processed separately
-            if (childNode.nodeType == ELEMENT_NODE) {
-                if (childNode.getAttribute("pa-field-processed") == null)
-                    travelToEle(childNode, cssRules, dart, depth + 1);
-            }
-            else
-                travelToEle(childNode, cssRules, dart, depth + 1);
-    }
-    // Make colour
-    function processColor(color) {
-        color = color.trim();
-        if (!color.startsWith("#")) return color;
-
-        if (color.match(/^#[0-9A-Fa-f]{3}$/) != null) {
-            let char1 = color.slice(1, 2);
-            let char2 = color.slice(2, 3);
-            let char3 = color.slice(3, 4);
-            return "#" + char1.repeat(2) + char2.repeat(2) + char3.repeat(2);
-        }
-        // Unknown cases
-        return color;
-    }
-    function colorToFlutter(cssColor){
-        var color;
-
-        try {
-            color = processColor(cssColor);
-            color = color.startsWith("#") ?
-                `Color(0x${color.slice(1).toUpperCase()})`
-                : `Colors.${color.toLowerCase()}`;
-        } catch {
-            color = "Colors.white";
-        }
-        return color;
-    }
-    function paddingToFlutter(value){
-        if (value.indexOf("\x20") == -1)
-            return `EdgeInsets.all(${value})`;
-
-        var values = value.trim().replace(/[\s]{2,}/g,"\x20").split("\x20");
-        var top = values[0]; // CSS counts from top clockwise
-        var right = values[1];
-        var bottom = values[2];
-        var left = values[3];
-        return `EdgeInsets.fromLTRB(${left},${top},${right},${bottom})`;
-    }
-    function textAlignToFlutter(value){
-        if (value=="left")
-            return "Alignment.centerLeft";
-        if (value=="right")
-            return "Alignment.centerRight";
-
-        return "Alignment.center";
-    }
-    // Deco
-    function makeBoxDecoration(node) {
-        var color, rValues;
-        color = colorToFlutter(node.getAttribute("h2d-background-color"));        
-        
-        try {
-            rValues = node.getAttribute("h2d-border-radius").trim().replace(/[\s]{2,}/g, "\x20");
-        } catch {
-            rValues = "0";
-        }
-
-        if (!rValues.includes("\x20"))
-            var [b1, b2, b3, b4] = [rValues, rValues, rValues, rValues];
-        else
-            var [b1, b2, b3, b4] = rValues.split("\x20");
-
-        return `BoxDecoration(color: ${color}, borderRadius: ` +
-            `BorderRadius.only(topLeft: Radius.circular(${b1}), topRight: Radius.circular(${b2}), ` +
-            `bottomRight: Radius.circular(${b3}), bottomLeft: Radius.circular(${b4})))`;
-    }
-    // Style for EB
-    function makeElevatedButtonStyle(node) {
-        var padding, minWidth, minHeight, textAlign;
-
-        try {
-            padding = node.getAttribute("h2d-padding");
-        } catch {
-            padding = 0;
-        }
-        try {
-            minWidth = node.getAttribute("h2d-min-width").trim();
-            if (minWidth.startsWith("$(")) minWidth = minWidth.slice(2).replace(/\)$/, "");
-        } catch {
-            minWidth = 50;
-        }
-        try {
-            minHeight = node.getAttribute("h2d-min-height").trim();
-            if (minHeight.startsWith("$(")) minHeight = minHeight.slice(2).replace(/\)$/, "");
-        } catch {
-            minHeight = 50;
-        }
-        try {
-            textAlign = node.getAttribute("h2d-text-align").trim();
-            if (textAlign == "left") textAlign = "alignment:Alignment.centerLeft";
-            node.setAttribute("h2d-text-align-processed", "yes");
-        } catch {
-            textAlign = "";
-        }
-
-        return `ElevatedButton.styleFrom(` +
-            `shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),` +
-            `padding: EdgeInsets.fromLTRB(${padding}, ${padding}, ${padding}, ${padding}),` +
-            `minimumSize: Size(${minWidth}, ${minHeight}),` +
-            `fixedSize: Size(${minWidth}, ${minHeight}),` +
-            `backgroundColor: Colors.white,` +
-            `elevation: 2,${textAlign}` +
-            `)`;
-    }
-    // CSS 
-    function cssKvToFlutterProp(node, attrName, propName, value) {
-        const PROP_MAP = {
-            h2dWidth: "width", h2dHeight: "height", h2dColor: "color",
-            h2dLeft: "left", h2dRight: "right", h2dTop: "top", h2dBottom: "bottom",
-            h2dPadding: "padding", h2dBackgroundColor: "color", h2dTextAlign:"alignment"
-        };
-        const ATTR_SETS = [
-            ["h2d-background-color", "h2d-border-radius"],
-            ["h2d-padding", "h2d-min-width", "h2d-min-height"]
-        ];
-        function getAttrSet(node, attrName) {
-            for (let s of ATTR_SETS)
-                if (s.includes(attrName)) {
-                    // Count to see if a full set ready
-                    var count = 0;
-
-                    for (let attr of s)
-                        if (node.getAttribute(attr) != null)
-                            count++;
-
-                    if (count == s.length) return s;
-                }
-
-            return null;
-        }
-
-        // Set of attributes
-        // Prioritize sets first
-        var set = getAttrSet(node, attrName);
-
-        if (set != null) {
-            // BoxDecoration
-            if (set.includes("h2d-background-color") || set.includes("h2d-border-radius"))
-                return ["decoration", makeBoxDecoration(node), set];
-            // ElevatedButton.styleFrom
-            else if (node.tagName == "elevated-button" &&
-                (set.includes("h2d-padding") || set.includes("h2d-min-width")
-                    || set.includes("h2d-min-height"))) {
-                return ["style", makeElevatedButtonStyle(node), set];
-            }
-        }
-
-        // Single value last
-        if (PROP_MAP[propName] != null) {
-            propName = PROP_MAP[propName];
-            value = value.replaceAll('"', '\\"');
-
-            if (value.trim().startsWith("$(")) {
-                value = value.trim().slice(2).replace(/\)$/, "");
-            }
-            if (propName=="color")
-                value = colorToFlutter(value);
-            if (propName=="padding")
-                value = paddingToFlutter(value);
-            if (propName=="alignment")
-                value = textAlignToFlutter(value);
-
-            return [propName, value, []];
-        }
-
-        // Unknown cases
-        return [propName, value, []];
-    }
-    // Tag attributes
-    function processAttributes(node) {
-        if (node.getAttributeNames == null) return;
-        const NO_QUOTES = [ // Flutter props
-            "onPressed", "onLongPress", "width", "height", "decoration", "style", "p",
-            "controller", "onTap", "thumbVisibility", "interactive", "onSecondaryTap",
-            "left", "top", "right", "bottom", "color", "padding", "alignment"
-        ]; // More
-        const SKIPS = [ // Tag attributes
-            "if", "for", "id", "class", "paField", "h2dTextOverflow"
-        ];
-        var indent2 = indent + "\x20".repeat(4);
-
-        // Special positioned param, must go before other props
-        if (node.tagName == "img-asset" || node.tagName == "img-net") {
-            var src = node.getAttribute("src").replaceAll('"', '&quot;').trim();
-            node.removeAttribute("src");
-
-            if (src.startsWith("$(")) {
-                src = src.slice(2).trim().replace(/\)$/, "");
-                dart.code += `${indent2}${src},\n`;
-            }
-            else
-                dart.code += `${indent2}"${src}",\n`;
-
-            if (node.tagName == "img-net") {
-                var w = 50, h = 50;
-                if (node.getAttribute("width") != null) w = node.getAttribute("width");
-                if (node.getAttribute("h2d-width") != null) w = node.getAttribute("h2d-width");
-                if (node.getAttribute("height") != null) h = node.getAttribute("height");
-                if (node.getAttribute("h2d-height") != null) h = node.getAttribute("h2d-height");
-
-                // webHtmlElementStrategy is a must to avoid CORS/ORB errors
-                dart.code += `${indent2}webHtmlElementStrategy:WebHtmlElementStrategy.prefer,\n`;
-                dart.code += `${indent2}errorBuilder:(context,error,stackTrace){` +
-                    `return Image.asset(` +
-                    `'${node.getAttribute("err-src")}',` +
-                    `width:${w},` +
-                    `height:${h}` +
-                    `);` +
-                    `},\n`;
-                node.removeAttribute("err-src");
-            }
-        }
-
-        var attrNames = node.getAttributeNames();
-        var propNames = attrNames.map(x => attr2prop(x));
-        var processedAttrs = [];
-
-        // Other props
-        for (let i = 0; i < propNames.length; i++) {
-            let attrName = attrNames[i];
-            if (processedAttrs.includes(attrName)) continue;
-            if (node.getAttribute(attrName + "-processed") == "yes") continue;
-
-            let _propName = propNames[i];
-            let [propName, value, processeds] =
-                cssKvToFlutterProp(node, attrName, _propName, node.getAttribute(attrName));
-            if (SKIPS.includes(propName)) continue;
-            processedAttrs = processedAttrs.concat(processeds);
-            value = value.trim();
-
-            if (NO_QUOTES.includes(propName))
-                dart.code += `${indent2}${propName}: ${value},\n`;
-            else {
-                if (value.startsWith("*") || value.startsWith("$(")) {
-                    if (value.startsWith("*"))
-                        dart.code += `${indent2}${propName}: ${value.slice(1).trim()},\n`;
-                    else
-                        dart.code += `${indent2}${propName}: ${value.slice(2).trim().replace(/\)$/, "")},\n`;
-                }
-                else
-                    dart.code += `${indent2}${propName}: "${value}",\n`;
-            }
-        }
-    }
-    const knownClasses = {
-        body: "Stack", box: "Container", div: "Row", span: "Container",
-        "img-asset": "Image.asset", "img-net": "Image.network"
-    };
-    // These must have "child:"
-    const withChild = {
-        "sized-box": true, "elevated-button": true, span: true, center: true,
-        "scrollbar": true, "single-child-scroll-view": true, container: true,
-        "gesture-detector": true, positioned: true, box: true, tooltip: true, "text-button":true,
-        align:true 
-    };
-    // These must have "children:"
-    const withChildren = {
-        row: true, div: true, wrap: true, column: true, stack: true, body: true
-    };
-    const DEBUG = true;
-
-    function logDebugInfo(prefix, node) {
-        if (node.getAttribute != null && node.getAttribute("class") != null)
-            var classes = node.getAttribute("class").replaceAll("\x20", ".");
-        else
-            var classes = "";
-
-        if (DEBUG == true && node.getAttribute != null)
-            log(`${prefix} ${node.tagName} #${node.getAttribute ? node.getAttribute("id") : ""} ` +
-                `.${classes}`);
+    if (node.nodeType == ELEMENT_NODE) {
+        var havingIfOnly = node.getAttribute("if") != null && node.getAttribute("foreach") == null;
+        var havingForOnly = node.getAttribute("if") == null && node.getAttribute("foreach") != null;
+        var havingIfAndFor = node.getAttribute("if") != null && node.getAttribute("foreach") != null;
+        var havingLogicTail = havingIfOnly == true || havingForOnly == true || havingIfAndFor == true;
+        var tailOfIfAndFor = "";
     }
 
-    // jsdom parse XML to lowercase tags, HTML to uppercase
-    // Root tag
-    if (node.tagName == "flutter-html") {
-        log("Root tag found");
-        goDeeper();
+    if (node.nodeType == ELEMENT_NODE) {
+        log(`${node.tagName}:${nodeLoc}`);
 
-    } else if (node.tagName == "import") {
-        logDebugInfo("IMPORT", node);
-        // Import tags
-        let packagePath = node.getAttribute("package");
-        dart.code += `import "${packagePath}";\n`;
-        // No other attributes
-
-    } else if (node.tagName == "tag-def") {
-        logDebugInfo("TAG-DEF", node);
-        // Ignore, already parsed
-        log("Already parsed tag-def", node.getAttribute("name"));
-
-    } else if (node.getAttribute != null && node.getAttribute("with") != null) {
-        logDebugInfo("FUNC", node);
-        // Function tag
-        var paramNames = node.getAttribute("with").trim().replace(/[\s]{2,}/g, "\x20").split("\x20");
-        var returnClass = tag2class(node.children[0].tagName);
-        var className = tag2class(node.tagName);
-        dart.code += `\n${returnClass} ${className}({`;
-        var arr = [];
-
-        for (let n of paramNames)
-            arr.push(`required ${n}`);
-
-        dart.code += arr.join(",");
-        dart.code += `}) {\n\x20\x20\x20\x20return\n`;
-        goDeeper();
-        // No other attributes
-
-    } else if (node.tagName == "scaffold") {
-        logDebugInfo("BODY", node);
-        // SCREEN scaffold
-        dart.code += `${indent}Scaffold(body:\n`;
-        goDeeper();
-        // No other attributes
-        dart.code += `${indent});\n}\n\n`;
-
-        // Mimic the mechanism of flutter-view.io
-        dart.code +=
-            `// Mimic flutter-view.io\n` +
-            `__flatten(List list) {\n` +
-            `    return List<Widget>.from(list.expand((item) {\n` +
-            `        return item is Iterable ? item : [item as Widget];\n` +
-            `    }));\n` +
-            `}\n// EOF\n`;
-
-    } else if (node.tagName == "container" && depth == 1) {
-        logDebugInfo("BOX", node);
-        // COMPONENT container
-        dart.code += `${indent}Container(child:\n`;
-        goDeeper();
-        // No other attributes
-        dart.code += `${indent});\n}\n\n`;
-
-        // Mimic the mechanism of flutter-view.io
-        dart.code +=
-            `// Mimic flutter-view.io\n` +
-            `__flatten(List list) {\n` +
-            `    return List<Widget>.from(list.expand((item) {\n` +
-            `        return item is Iterable ? item : [item as Widget];\n` +
-            `    }));\n` +
-            `}\n// EOF\n`;
-
-    } else if (node.getAttribute != null && node.getAttribute("if") != null) {
-        logDebugInfo("IF", node);
-        // Any tag with 'if'
-        let clause = node.getAttribute("if");
-        let className = knownClasses[node.tagName] || tag2class(node.tagName);
-        let postAttributeStr = "";
-        let withChildAutoRow = false;
-
-        if (withChildren[node.tagName] == true) {
-            dart.code += `\n${indent}${clause}?\n${indent}${className}(\n`;
-            postAttributeStr = `${indent}${TAB}children: __flatten([\n`;
+        if (node.tagName == "BODY" && node.getAttribute("func") != null) {
+            node.indent = TAB + node.indent;
+            depth++;
         }
-        else
-            if (withChild[node.tagName] == true) {
-                if (node.tagName != "column" && node.children != null && node.children.length > 0
-                    && (node.children[0].tagName == "div" || node.children[0].tagName == "row")) {
-                    let className = knownClasses[node.tagName] || tag2class(node.tagName);
-                    dart.code += `\n${indent}${clause}?\n${indent}${className}(\n`;
-                    postAttributeStr = `${indent}${TAB}child: Column(children: __flatten([\n`;
-                    withChildAutoRow = true;
-                } else {
-                    if (node.childNodes.length > 0 && node.innerHTML.trim().length > 0) {
-                        dart.code += `\n${indent}${clause}?\n${indent}${className}(\n`;
-                        postAttributeStr = `${indent}${TAB}child:\n`;
-                    }
-                    else
-                        dart.code += `\n${indent}${clause}?\n${indent}${className}(\n`;
-                }
-            }
-            else
-                dart.code += `\n${indent}${clause}?\n${indent}${className}(\n`;
-
-        processAttributes(node);
-        dart.code += postAttributeStr;
-        goDeeper();
-
-        if (withChildren[node.tagName] == true)
-            dart.code += `${indent}])):SizedBox(),\n`;
-        else
-            if (withChild[node.tagName] == true) {
-                if (withChildAutoRow == true)
-                    dart.code += `${indent}]))):SizedBox(),\n`;
-                else
-                    dart.code += `${indent}):SizedBox(),\n`;
-            }
-            else
-                dart.code += `${indent}):SizedBox(),\n`;
-
-    } else if (node.getAttribute != null && node.getAttribute("for") != null) {
-        logDebugInfo("FOR", node);
-        // Any tag with 'for'
-        var arr = node.getAttribute("for");
-        dart.code += `${indent}${arr}.map((x)=>\n`;
-
-        var clonedNode = node.cloneNode(true);
-        clonedNode.removeAttribute("for");
-        travelToEle(clonedNode, cssRules, dart, depth + 1);
-
-        dart.code += `${indent}).toList(),\n`;
-
-    } else if (hasChildrenWithPaField(node)) {
-        logDebugInfo("PA-FIELD", node);
-        // Any tag having children with 'pa-field'
-        let tab = "\x20".repeat(4);
-        let className = knownClasses[node.tagName] || tag2class(node.tagName);
-        dart.code += `${indent}${className}(\n`;
-
-        for (let c of node.children)
-            if (c.getAttribute != null && c.getAttribute("pa-field") != null) {
-                let paField = c.getAttribute("pa-field");
-                processAttributes(node);
-                dart.code += `${indent}${tab}${paField}:\n`;
-                travelToEle(c, cssRules, dart, depth + 1);
-                c.setAttribute("pa-field-processed", "yes");
-            }
-
-        goDeeper();
-        // Upper tier of DFS, processAttributes inside travelToEle again.
-        dart.code += `${indent}),\n`;
-
-    } else if (node.tagName != "column" && node.tagName != "wrap" && node.tagName != "body"
-        && node.children != null && node.children.length > 0
-        && (node.children[0].tagName == "div" || node.children[0].tagName == "row")) {
-        logDebugInfo("AUTO-COLUMN", node);
-        // Auto-column above div, row
-        // CONDITION: A DIV OR ROW TAG NOT IN COLUMN TAG
-        let className = knownClasses[node.tagName] || tag2class(node.tagName);
-        dart.code += `${indent}${className}(\n`;
-        let postAttributeStr;
-
-        // "Stack" condition is for if future 'box' tag to be Stack
-        if (className != "Row" && className != "Stack")
-            postAttributeStr = `${indent}${TAB}child: Column(children: __flatten([\n`;
-        else
-            postAttributeStr = `${indent}${TAB}children: [Column(children: __flatten([\n`;
-
-        processAttributes(node);
-        dart.code += postAttributeStr;
-        goDeeper();
-
-        // "Stack" condition is for if future 'box' tag to be Stack
-        if (className != "Row" && className != "Stack")
-            dart.code += `${indent}]))),\n`;
-        else
-            dart.code += `${indent}]))]),\n`;
-
-    } else if ((node.tagName == "span" || node.tagName == "container") && node.children != null
-        && node.children.length > 1) {
-        logDebugInfo("AUTO-ROW", node);
-        // Auto-row if span has more than 1 child
-        // CONDITION: A SPAN OR CONTAINER TAG WITH MORE THAN 1 CHILD
-        let className = knownClasses[node.tagName] || tag2class(node.tagName);
-        dart.code += `${indent}${className}(\n`;
-        let postAttributeStr;
-        postAttributeStr = `${indent}${TAB}child: Row(children: __flatten([\n`;
-
-        processAttributes(node);
-        dart.code += postAttributeStr;
-        goDeeper();
-        dart.code += `${indent}]))),\n`;
-
-    } else if (withChild[node.tagName] != null) {
-        logDebugInfo("WITH-CHILD", node);
-        // Those with child (no children prop)
-        let className = knownClasses[node.tagName] || tag2class(node.tagName);
-
-        if (node.childNodes.length > 0 && node.innerHTML.trim().length > 0) {
-            dart.code += `${indent}${className}(\n`;
-            let postAttributeStr = `${indent}${TAB}child:\n`;
-            processAttributes(node);
-            dart.code += postAttributeStr;
-            goDeeper();
-            dart.code += `${indent}),\n`;
+        if (typeof tagProcessors[node.tagName] != "function") {
+            log(`UNIMPLEMENTED TAG ${node.tagName}:${nodeLoc}`);
+            return;
         }
-        else {
-            dart.code += `${indent}${className}(\n`;
-            processAttributes(node);
-            dart.code += `${indent}),\n`;
-        }
+        // Logic
+        if (havingIfOnly)
+            tailOfIfAndFor = processIfOnly(dom, node, cssRules, dart, depth);
+        else if (havingForOnly)
+            tailOfIfAndFor = processForOnly(dom, node, cssRules, dart, depth);
+        else if (havingIfAndFor)
+            tailOfIfAndFor = processIfAndFor(dom, node, cssRules, dart, depth);
 
-    } else if (withChildren[node.tagName] != null) {
-        logDebugInfo("WITH-CHILDREN", node);
-        // Those with children
-        let className = knownClasses[node.tagName] || tag2class(node.tagName);
-
-        if (node.tagName == "box") {
-            className = `SizedBox.expand(child:` + className;
-        }
-        dart.code += `${indent}${className}(\n`;
-        let postAttributeStr = `${indent}${TAB}children: __flatten([\n`;
-        processAttributes(node);
-        dart.code += postAttributeStr;
-        goDeeper();
-
-        if (node.tagName == "box")
-            dart.code += `${indent}]))),\n`;
-        else
-            dart.code += `${indent}])),\n`;
-
-    } else if (knownClasses[node.tagName] != null) {
-        logDebugInfo("TAG-TO-CLASS", node);
-        // HTML -> Flutter tags    
-        let className = knownClasses[node.tagName] || tag2class(node.tagName);
-        dart.code += `${indent}${className}(\n`;
-        let postAttributeStr = "";
-
-        if (withChildren[node.tagName])
-            postAttributeStr = `${indent}${TAB}children: __flatten([\n`;
-        else if (withChild[node.tagName])
-            postAttributeStr = `${indent}${TAB}child:\n`;
-
-        processAttributes(node);
-        dart.code += postAttributeStr;
-        goDeeper();
-
-        if (withChildren[node.tagName])
-            dart.code += `${indent}])),\n`;
-        else if (withChild[node.tagName])
-            dart.code += `${indent}),\n`;
-        else
-            dart.code += `${indent}),\n`;
-
-    } else if (node.nodeType == ELEMENT_NODE) {
-        logDebugInfo("ELEMENT", node);
-        // Other elements   
-        let className = knownClasses[node.tagName] || tag2class(node.tagName);
-        dart.code += `${indent}${className}(\n`;
-        processAttributes(node);
-        goDeeper();
-        dart.code += `${indent}),\n`;
-
-    } else if (node.nodeType == TEXT_NODE) {
-        logDebugInfo("TEXT", node);
-        // Text node    
-        if (node.textContent.trim().length > 0) {
-            var text = node.textContent.replace(/[\s]{2,}/g, "\x20")
-                .replaceAll("\r", "\x20").replaceAll("\n", "\x20").trim();
-            var styling = "";
-
-            if (node.parentElement != null && (node.parentElement.tagName == "elevated-button" ||
-                node.parentElement.getAttribute("h2d-text-overflow") == "ellipsis"
-            )) {
-                styling = ",maxLines:1,overflow:TextOverflow.ellipsis";
-            }
-
-            if (text.startsWith("$(")) {
-                text = text.slice(2).trim().replace(/\)$/, "");
-                dart.code += `${indent}Text(${text}${styling}),\n`;
-            }
-            else {
-                text = text.replaceAll('"', '\\"');
-                dart.code += `${indent}const Text("${text}"${styling}),\n`;
-            }
-        }
-        // No other attributes
-
-    } else if (node.nodeType == COMMENT_NODE) {
-        logDebugInfo("COMMENT", node);
-        // Comment node    
-        dart.code += `${indent}/*${node.textContent}*/\n`;
-        // No other attributes
+        tagProcessors[node.tagName](dom, node, cssRules, dart, depth);
     }
-    // Not to handle
-    else {
-        log("Weird node type:", node.nodeType);
+    else if (node.nodeType == TEXT_NODE)
+        processTextNode(dom, node, cssRules, dart, depth);
+    else if (node.nodeType == COMMENT_NODE)
+        processCommentNode(dom, node, cssRules, dart, depth);
+    else
+        log(`BAD NODE: Line: ${nodeLoc}`);
+
+    for (let childNode of node.childNodes)
+        travelToEle(dom, childNode, cssRules, dart, depth + 1);
+
+    if (node.nodeType == ELEMENT_NODE) {
+        tagProcessors[node.tagName + "tail"](dom, node, cssRules, dart, depth);
+
+        if (havingLogicTail)
+            dart.code += `${indent}${tailOfIfAndFor}\n`;
     }
 }
 
@@ -662,7 +570,8 @@ function convertToDart(htmlFilePath, cssFilePath, dartFilePath) {
     log("Parsing HTML...");
     var dom = new JSDOM(htmlContent, {
         // WARN: Need this or the tag after a self-closing tag becomes child.
-        contentType: 'application/xml'
+        contentType: "text/html", // 'application/xml',
+        includeNodeLocations: true
     });
     log("HTML parsed");
     var document = dom.window.document;
@@ -671,12 +580,10 @@ function convertToDart(htmlFilePath, cssFilePath, dartFilePath) {
     // log(rootEle.outerHTML);
     // Sample DOM got:
     /* <html><head></head><body>
-           <import package="flutter/material.dart">
-           <import package="flutter/cupertino.dart">
-           <main-ui-view with=...*/
+           <main name="MainUiView" with=...*/
 
     // Parse tag-def
-    var tagDefs = [...rootEle.querySelectorAll("tag-def")];
+    var tagDefs = [...rootEle.querySelectorAll("tagdef")];
     var tagDefMap = {};
 
     for (let def of tagDefs) {
@@ -689,6 +596,8 @@ function convertToDart(htmlFilePath, cssFilePath, dartFilePath) {
         for (let node of nodes)
             node.replaceWith(tagDefMap[tagName]);
     }
+    var tagDefs = [...rootEle.querySelectorAll("tagdef")];
+    tagDefs.forEach(x => x.remove());
 
     // CSS
     log("Parsing CSS...");
@@ -715,31 +624,14 @@ function convertToDart(htmlFilePath, cssFilePath, dartFilePath) {
     COMMENT_NODE = dom.window.Node.COMMENT_NODE;
 
     var dart = {
-        code:
-            "// Generated by html2dart\n" +
-            "// NOTE: DIV FOR HTML2DART HAS NO CSS, ONLY SPAN\n"
+        code: "// This file was generated by html2dart\n"
     };
-    travelToEle(rootEle, sheet, dart, -1); // -1 to ignore root tag indent
+    processImports(dom, rootEle, dart);
+    travelToEle(dom, rootEle, sheet, dart, -1); // -1 to ignore root tag indent
     // log("Dart code ========================================");
     // log(dart.code);
     // log("========================================");
     fs.writeFileSync(dartFilePath, dart.code);
-}
-
-// Get file modified time
-async function getModifiedTime(filePath) {
-    const stat = await fs.promises.stat(filePath);
-    return stat.mtimeMs;
-}
-
-// Check if file exists
-async function fileExists(path) {
-    try {
-        await fs.promises.access(path);
-        return true;
-    } catch {
-        return false;
-    }
 }
 
 var ____CORE____;
@@ -772,18 +664,12 @@ process.on('unhandledRejection', (reason, promise) => {
     const files = await glob(relativePath + '/**/*.html');
     log("HTML files found:");
     log(files);
-    log("****************************************");
-    log("NOTE: Under screen tag must be scaffold > body");
-    log("NOTE: Under component tag must be container > box");
-    log("NOTE: div tag to divide vertically");
-    log("NOTE: span tag to divide horizontally");
-    log("NOTE: Use $(..) for variable in HTML/CSS text");
-    log("****************************************");
 
     chokidar.watch(relativePath, {
         usePolling: true // Equivalent to nodemon -L
     }).on('change', async (f) => {
         if (/\.(html|css)$/.test(f)) {
+            console.clear(); // Doesnt clear in vscode/antig terminal
             console.log('\nChanged:', f);
             f = f.replace(/\.[a-z]+$/, ".html");
             let htmlFilePath = f;
