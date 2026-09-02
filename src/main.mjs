@@ -290,7 +290,8 @@ function transformAttribute(node, attr, value) {
 // Tag attributes
 function processAttributes(dom, node, cssRules, dart, depth) {
     const IGNORES = [
-        "id", "class", "if", "foreach", "h2d-left", "h2d-top", "src", "h2d-text-overflow"
+        "id", "class", "if", "foreach", "h2d-left", "h2d-top", "src", "h2d-text-overflow",
+        "h2d-overflow", "h2d-overflow-x", "h2d-overflow-y", "scroller"
     ];
     const EXP_ATTRS = ["onclick", "oncontextmenu"];
     var attrs = [...node.getAttributeNames()];
@@ -653,35 +654,75 @@ function processIfAndFor(dom, node, cssRules, dart, depth) {
 
 // Check if needed to add outer tag
 function checkToAddOuterTag(node){
+    var outerTagList = [];
+
+    // Positioned
     var posAttrs = ["h2d-left", "h2d-top", "h2d-right", "h2d-bottom"];
 
     for (let at of posAttrs)
-        if (node.hasAttribute(at)) return "Positioned";
+        if (node.hasAttribute(at) && !outerTagList.includes("Positioned")) 
+            outerTagList.push("Positioned");
 
+    // Scroll bars
+    /*
+    <scrollbar thumb-visibility="true" interactive="true" controller="p.mainScroller">
+    <single-child-scroll-view controller="p.mainScroller">
+    */
+    var scrollAttrs = ["h2d-overflow", "h2d-overflow-y", "h2d-overflow-x"];
+
+    for (let at of scrollAttrs)
+        if (node.getAttribute(at)=="auto" && !outerTagList.includes("Container-SB")){
+            outerTagList.push("Container-SB");
+            outerTagList.push("Scrollbar");
+            outerTagList.push("SingleChildScrollView");
+        }
+
+    if (outerTagList.length>0) return outerTagList;
     return null;
 }
 
 // Open outer tag
-function openOuterTag(dom,node,cssRules,dart,depth,outerTag){
+function openOuterTag(dom,node,cssRules,dart,depth,outerTagList){
     var indent = node.indent;
     var [id,classes] = getNodeIdAndClasses(node);
     dart.code += `\n${indent}// ${node.tagName} #${id} .${classes}\n`;
-    dart.code += `${indent}${outerTag}(`;
 
-    var left = node.getAttribute("h2d-left");
-    var top = node.getAttribute("h2d-top");
-    var [t1,leftValue] = parseText(left);
-    var [t2,topValue] = parseText(top);
+    for (let outerTag of outerTagList){
+        // Positioned
+        if (outerTag=="Positioned"){            
+            var left = node.getAttribute("h2d-left");
+            var top = node.getAttribute("h2d-top");
+            var [t1,leftValue] = parseText(left);
+            var [t2,topValue] = parseText(top);
 
-    if (outerTag=="Positioned"){
-        dart.code += `left:${leftValue}, top:${topValue}, child:\n`;
+            dart.code += `${indent}${outerTag}(`;
+            dart.code += `left:${leftValue}, top:${topValue}, child:\n`;
+        }
+        // Scrollbar/SingleChildScrollView
+        // Check Scrollbar only, skip SingleChildScrollView
+        if (outerTag=="Container-SB"){
+            var scroller = node.getAttribute("scroller");
+            var w = node.getAttribute("h2d-width");
+            var h = node.getAttribute("h2d-height");
+            var [t1,wValue] = parseText(w);
+            var [t2,hValue] = parseText(h);
+            // Tag inside must autoexpand or no scrolling:
+            node.removeAttribute("h2d-width");
+            node.removeAttribute("h2d-height");
+
+            dart.code += 
+            `${indent}Container(width:${wValue}, height:${hValue}, child:\n`+
+            `${indent}Scrollbar(thumbVisibility:true, interactive:true, controller:${scroller}, child:\n`+
+            `${indent}SingleChildScrollView(controller:${scroller}, child:\n`;
+        }
     }
 }
 
 // Close outer tag
-function closeOuterTag(dom,node,cssRules,dart,depth,outerTag){
+function closeOuterTag(dom,node,cssRules,dart,depth,outerTagList){
     var indent = node.indent;
-    dart.code += `${indent}),\n`;
+    var closing = ")".repeat(outerTagList.length);
+    dart.code += `${indent}${closing},\n`;
 }
 
 // Process component tag
@@ -722,8 +763,8 @@ function travelToEle(dom, node, cssRules, dart, depth) {
 
     if (node.nodeType == ELEMENT_NODE) {
         log(`${node.tagName}:${nodeLoc}`);
-        var outerTag = checkToAddOuterTag(node);
-        if (outerTag!=null) openOuterTag(dom,node,cssRules,dart,depth,outerTag);
+        var outerTags = checkToAddOuterTag(node);
+        if (outerTags!=null) openOuterTag(dom,node,cssRules,dart,depth,outerTags);
 
         if (node.tagName == "BODY" && node.getAttribute("func") != null) {
             node.indent = TAB + node.indent;
@@ -765,7 +806,7 @@ function travelToEle(dom, node, cssRules, dart, depth) {
             if (havingLogicTail)
                 dart.code += `${indent}${tailOfIfAndFor}\n`;
 
-            if (outerTag!=null) closeOuterTag(dom,node,cssRules,dart,depth,outerTag);
+            if (outerTags!=null) closeOuterTag(dom,node,cssRules,dart,depth,outerTags);
         }
     }
 }
