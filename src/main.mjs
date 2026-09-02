@@ -655,7 +655,7 @@ function processForOnly(dom, node, cssRules, dart, depth) {
     dart.code += `\n${indent}${arr}.map((x)=>\n`;
 
     // Unlike Position or Scrollbar, oncontextmenu may need the 'x' in foreach
-    var outerTags = checkToAddOuterTag(node,true);
+    var outerTags = checkToAddOuterTag(node);
     var closing = "";
 
     if (outerTags!=null){
@@ -671,7 +671,7 @@ function processIfAndFor(dom, node, cssRules, dart, depth) {
 }
 
 // Check if needed to add outer tag
-function checkToAddOuterTag(node,afterForEach=false){
+function checkToAddOuterTag(node){
     var outerTagList = [];
 
     // Positioned (must be first to stay right below Stack)
@@ -682,7 +682,7 @@ function checkToAddOuterTag(node,afterForEach=false){
             outerTagList.push("Positioned");
 
     // Secondary tap (rightclick)
-    if (node.getAttribute("oncontextmenu")!=null && afterForEach==true)
+    if (node.getAttribute("oncontextmenu")!=null)
         outerTagList.push("GestureDetector");
 
     // Scroll bars (must be last to have child: with sizes to scroll)
@@ -787,11 +787,15 @@ function travelToEle(dom, node, cssRules, dart, depth) {
         var havingLogicTail = havingIfOnly == true || havingForOnly == true || havingIfAndFor == true;
         var tailOfIfAndFor = "";
     }
+    var outerTags=null;
 
     if (node.nodeType == ELEMENT_NODE) {
         log(`${node.tagName}:${nodeLoc}`);
-        var outerTags = checkToAddOuterTag(node,false);
-        if (outerTags!=null) openOuterTag(dom,node,cssRules,dart,depth,outerTags);
+        // Let processFor* put outer tag after map((x)... to access x
+        if (node.getAttribute("foreach")==null){
+            outerTags = checkToAddOuterTag(node);
+            if (outerTags!=null) openOuterTag(dom,node,cssRules,dart,depth,outerTags);
+        }
 
         if (node.tagName == "BODY" && node.getAttribute("func") != null) {
             node.indent = TAB + node.indent;
