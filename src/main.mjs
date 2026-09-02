@@ -156,6 +156,8 @@ function comma(node) {
 function transformClick(node, attr, value) {
     if (node.tagName == "BUTTON") {
         return [true, "onPressed", value];
+    }else if (node.tagName == "INPUT") {
+        return [false, "onTap", value];
     }else if (node.tagName=="A"){
         return [false, "onPressed",value];
     }
@@ -242,6 +244,11 @@ function makeElevatedButtonStyle(node,attr,value){
     return [true,"style",outValue];
 }
 
+// Make input deco
+function makeInputDeco(node,attr,value){    
+    return [false,"decoration",`InputDecoration(hintText:"${value}")`];
+}
+
 // Transform attribute
 function transformAttribute(node, attr, value) {
     const ATTR2PROP = { // No processing
@@ -252,12 +259,14 @@ function transformAttribute(node, attr, value) {
         "h2d-padding", "controller"
     ];
     const NOQUOTE_PROPS = [
-        "onPressed", "decoration", "style", "controller", "onLongPress"
+        "onPressed", "decoration", "style", "controller", "onLongPress", "onTap"
     ];
     var attr2transform = {
         // Events
         "onclick": transformClick, "oncontextmenu": transformRightClick,
-        // Props
+        // HTML attributes
+        "placeholder": makeInputDeco,
+        // CSS props
         "h2d-background-color": [makeContainerDeco,makeElevatedButtonStyle],
         "h2d-border-radius": makeContainerDeco, "h2d-padding": makeContainerPadding,
         "h2d-text-align": makeElevatedButtonStyle
