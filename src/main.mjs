@@ -681,7 +681,7 @@ function checkToAddOuterTag(node){
     return null;
 }
 
-// Open outer tag
+// Open outer tags
 function openOuterTag(dom,node,cssRules,dart,depth,outerTagList){
     var indent = node.indent;
     var [id,classes] = getNodeIdAndClasses(node);
@@ -718,7 +718,7 @@ function openOuterTag(dom,node,cssRules,dart,depth,outerTagList){
     }
 }
 
-// Close outer tag
+// Close outer tags
 function closeOuterTag(dom,node,cssRules,dart,depth,outerTagList){
     var indent = node.indent;
     var closing = ")".repeat(outerTagList.length);
