@@ -175,7 +175,10 @@ function transformRightClick(node, attr, value) {
 }
 
 // Make decoration prop for Container
-function makeDecoration(node,attr,value){
+function makeContainerDeco(node,attr,value){
+    if (["DIV","SPAN"].indexOf(node.tagName) == -1){
+        return [null,null,null];
+    }
     var backgroundColor = node.getAttribute("h2d-background-color") ?? "white";
     var borderRadius = node.getAttribute("h2d-border-radius") ?? "0";
     var color = colorToFlutter(backgroundColor);
@@ -200,7 +203,7 @@ function makeDecoration(node,attr,value){
 }
 
 // Make padding for container
-function makePadding(node,attr, value){
+function makeContainerPadding(node,attr, value){
     var p = node.getAttribute("h2d-padding") ?? "0";
     var left,top,right,bottom;
 
@@ -220,7 +223,10 @@ function makePadding(node,attr, value){
 }
 
 // Process text-align
-function processButtonStyle(node,attr,value){
+function makeElevatedButtonStyle(node,attr,value){
+    if (["BUTTON"].indexOf(node.tagName) == -1){
+        return [null,null,null];
+    }
     var align = node.getAttribute("h2d-text-align") ?? "left";
     if (align=="left") align="centerLeft";
     else if (align=="right") align="centerRight";
@@ -249,10 +255,12 @@ function transformAttribute(node, attr, value) {
         "onPressed", "decoration", "style", "controller", "onLongPress"
     ];
     var attr2transform = {
+        // Events
         "onclick": transformClick, "oncontextmenu": transformRightClick,
-        "h2d-background-color": makeDecoration,
-        "h2d-border-radius": makeDecoration, "h2d-padding": makePadding,
-        "h2d-text-align": processButtonStyle
+        // Props
+        "h2d-background-color": [makeContainerDeco,makeElevatedButtonStyle],
+        "h2d-border-radius": makeContainerDeco, "h2d-padding": makeContainerPadding,
+        "h2d-text-align": makeElevatedButtonStyle
     };
     var [todo, value] = parseText(node.getAttribute(attr));
     if (NOQUOTE_ATTRS.includes(attr)) todo = NO_QUOTES;
@@ -260,7 +268,18 @@ function transformAttribute(node, attr, value) {
     if (ATTR2PROP[attr] != null) {
         return [false, todo, ATTR2PROP[attr], value];
     } else if (attr2transform[attr] != null) {
-        let [forChild, propName, value2] = attr2transform[attr](node, attr, value);
+        let forChild, propName, value2;
+        let funcs = attr2transform[attr];
+
+        if (typeof attr2transform[attr] == "function")
+            [forChild, propName, value2] = attr2transform[attr](node, attr, value);
+        else{
+            for (let func of funcs){
+                [forChild, propName, value2] = func(node, attr, value);
+                if (forChild!=null || propName!=null || value2!=null) break;
+            }
+        }
+
         if (NOQUOTE_PROPS.includes(propName)) todo = NO_QUOTES;
         return [forChild, todo, propName, value2];
     } else {
