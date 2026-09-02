@@ -654,25 +654,38 @@ function processForOnly(dom, node, cssRules, dart, depth) {
     var indent = node.indent;
     dart.code += `\n${indent}${arr}.map((x)=>\n`;
 
-    return `),`;
+    // Unlike Position or Scrollbar, oncontextmenu may need the 'x' in foreach
+    var outerTags = checkToAddOuterTag(node,true);
+    var closing = "";
+
+    if (outerTags!=null){
+        openOuterTag(dom,node,cssRules,dart,depth,outerTags);    
+        closing = ")".repeat(outerTags.length);
+    }
+    return `${closing}),`;
 }
 
 // Process 'if' clause and 'foreach' clause on the same tag
 function processIfAndFor(dom, node, cssRules, dart, depth) {
+    // todo
 }
 
 // Check if needed to add outer tag
-function checkToAddOuterTag(node){
+function checkToAddOuterTag(node,afterForEach=false){
     var outerTagList = [];
 
-    // Positioned
+    // Positioned (must be first to stay right below Stack)
     var posAttrs = ["h2d-left", "h2d-top", "h2d-right", "h2d-bottom"];
 
     for (let at of posAttrs)
         if (node.hasAttribute(at) && !outerTagList.includes("Positioned")) 
             outerTagList.push("Positioned");
 
-    // Scroll bars
+    // Secondary tap (rightclick)
+    if (node.getAttribute("oncontextmenu")!=null && afterForEach==true)
+        outerTagList.push("GestureDetector");
+
+    // Scroll bars (must be last to have child: with sizes to scroll)
     /*
     <scrollbar thumb-visibility="true" interactive="true" controller="p.mainScroller">
     <single-child-scroll-view controller="p.mainScroller">
@@ -684,7 +697,7 @@ function checkToAddOuterTag(node){
             outerTagList.push("Container-SB");
             outerTagList.push("Scrollbar");
             outerTagList.push("SingleChildScrollView");
-        }
+        }    
 
     if (outerTagList.length>0) return outerTagList;
     return null;
@@ -706,6 +719,11 @@ function openOuterTag(dom,node,cssRules,dart,depth,outerTagList){
 
             dart.code += `${indent}${outerTag}(`;
             dart.code += `left:${leftValue}, top:${topValue}, child:\n`;
+        }
+        // GestureDetector
+        if (outerTag=="GestureDetector"){
+            var code = node.getAttribute("oncontextmenu");            
+            dart.code += `${indent}GestureDetector(onSecondaryTap:${code}, child:\n`;
         }
         // Scrollbar/SingleChildScrollView
         // Check Scrollbar only, skip SingleChildScrollView
@@ -772,7 +790,7 @@ function travelToEle(dom, node, cssRules, dart, depth) {
 
     if (node.nodeType == ELEMENT_NODE) {
         log(`${node.tagName}:${nodeLoc}`);
-        var outerTags = checkToAddOuterTag(node);
+        var outerTags = checkToAddOuterTag(node,false);
         if (outerTags!=null) openOuterTag(dom,node,cssRules,dart,depth,outerTags);
 
         if (node.tagName == "BODY" && node.getAttribute("func") != null) {
