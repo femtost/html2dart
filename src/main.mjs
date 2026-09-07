@@ -61,7 +61,7 @@ function tag2func(tagName) {
         className.push(tokens[i][0].toUpperCase() + tokens[i].substring(1));
     }
     var str = className.join("");
-    return str.slice(0,1).toLowerCase() + str.slice(1);
+    return str.slice(0, 1).toLowerCase() + str.slice(1);
 }
 
 // Tag attribute name to class prop name
@@ -156,10 +156,10 @@ function comma(node) {
 function transformClick(node, attr, value) {
     if (node.tagName == "BUTTON") {
         return [true, "onPressed", value];
-    }else if (node.tagName == "INPUT") {
+    } else if (node.tagName == "INPUT") {
         return [false, "onTap", value];
-    }else if (node.tagName=="A"){
-        return [false, "onPressed",value];
+    } else if (node.tagName == "A") {
+        return [false, "onPressed", value];
     }
 
     return [false, attr, value];
@@ -169,7 +169,7 @@ function transformClick(node, attr, value) {
 function transformRightClick(node, attr, value) {
     if (node.tagName == "BUTTON") {
         return [true, "onLongPress", value];
-    }else if (node.tagName=="A"){
+    } else if (node.tagName == "A") {
         // todo
     }
 
@@ -177,17 +177,17 @@ function transformRightClick(node, attr, value) {
 }
 
 // Make decoration prop for Container
-function makeContainerDeco(node,attr,value){
-    if (["DIV","SPAN"].indexOf(node.tagName) == -1){
-        return [null,null,null];
+function makeContainerDeco(node, attr, value) {
+    if (["DIV", "SPAN"].indexOf(node.tagName) == -1) {
+        return [null, null, null];
     }
     var backgroundColor = node.getAttribute("h2d-background-color") ?? "white";
     var borderRadius = node.getAttribute("h2d-border-radius") ?? "0";
     var color = colorToFlutter(backgroundColor);
-    var r = borderRadius.trim().replace(/[\s]{2,}/g,"\x20");
+    var r = borderRadius.trim().replace(/[\s]{2,}/g, "\x20");
     var rTL, rTR, rBR, rBL;
 
-    if (r.indexOf("\x20") >= 0){
+    if (r.indexOf("\x20") >= 0) {
         let toks = r.split("\x20");
         // CSS order: topleft corner first and go clockwise
         rTL = toks[0]; rTR = toks[1]; rBR = toks[2]; rBL = toks[3];
@@ -196,57 +196,57 @@ function makeContainerDeco(node,attr,value){
 
     if (r != null)
         var outValue = `BoxDecoration(color: ${color}, borderRadius: BorderRadius.only(topLeft: Radius.circular(${r}), topRight: Radius.circular(${r}), bottomRight: Radius.circular(${r}), bottomLeft: Radius.circular(${r})))`;
-    else 
+    else
         var outValue = `BoxDecoration(color: ${color}, borderRadius: BorderRadius.only(topLeft: Radius.circular(${rTL}), topRight: Radius.circular(${rTR}), bottomRight: Radius.circular(${rBR}), bottomLeft: Radius.circular(${rBL})))`;
 
-    node.setAttribute("h2d-background-color-processed","yes");
-    node.setAttribute("h2d-border-radius-processed","yes");
-    return [false,"decoration",outValue];
+    node.setAttribute("h2d-background-color-processed", "yes");
+    node.setAttribute("h2d-border-radius-processed", "yes");
+    return [false, "decoration", outValue];
 }
 
 // Make padding for container
-function makeContainerPadding(node,attr, value){
+function makeContainerPadding(node, attr, value) {
     var p = node.getAttribute("h2d-padding") ?? "0";
-    var left,top,right,bottom;
+    var left, top, right, bottom;
 
-    if (p.trim().indexOf("\x20") >= 0){
+    if (p.trim().indexOf("\x20") >= 0) {
         let v = p.replace(/[\s]{2,}/g, "\x20").split("\x20");
         let _;
-        [_,top] = parseText(v[0]);
-        [_,right] = parseText(v[1]);
-        [_,bottom] = parseText(v[2]);
-        [_,left] = parseText(v[3]);
-    }else{
-        top=p; right=p; bottom=p; left=p;
+        [_, top] = parseText(v[0]);
+        [_, right] = parseText(v[1]);
+        [_, bottom] = parseText(v[2]);
+        [_, left] = parseText(v[3]);
+    } else {
+        top = p; right = p; bottom = p; left = p;
     }
 
     var outValue = `EdgeInsets.fromLTRB(${left},${top},${right},${bottom})`;
-    return [false,"padding",outValue];
+    return [false, "padding", outValue];
 }
 
 // Process text-align
-function makeElevatedButtonStyle(node,attr,value){
-    if (["BUTTON"].indexOf(node.tagName) == -1){
-        return [null,null,null];
+function makeElevatedButtonStyle(node, attr, value) {
+    if (["BUTTON"].indexOf(node.tagName) == -1) {
+        return [null, null, null];
     }
     var align = node.getAttribute("h2d-text-align") ?? "left";
-    if (align=="left") align="centerLeft";
-    else if (align=="right") align="centerRight";
-    else if (align=="center") align="center";
-    else align="centerLeft";
+    if (align == "left") align = "centerLeft";
+    else if (align == "right") align = "centerRight";
+    else if (align == "center") align = "center";
+    else align = "centerLeft";
 
     var color = node.getAttribute("h2d-background-color") ?? "white";
     color = colorToFlutter(color);
 
-    var outValue = `ElevatedButton.styleFrom(alignment:Alignment.${align},`+
-        `padding: EdgeInsets.fromLTRB(10,10,10,10),`+
+    var outValue = `ElevatedButton.styleFrom(alignment:Alignment.${align},` +
+        `padding: EdgeInsets.fromLTRB(10,10,10,10),` +
         `backgroundColor:${color})`;
-    return [true,"style",outValue];
+    return [true, "style", outValue];
 }
 
 // Make input deco
-function makeInputDeco(node,attr,value){    
-    return [false,"decoration",`InputDecoration(hintText:"${value}")`];
+function makeInputDeco(node, attr, value) {
+    return [false, "decoration", `InputDecoration(hintText:"${value}")`];
 }
 
 // Transform attribute
@@ -267,7 +267,7 @@ function transformAttribute(node, attr, value) {
         // HTML attributes
         "placeholder": makeInputDeco,
         // CSS props
-        "h2d-background-color": [makeContainerDeco,makeElevatedButtonStyle],
+        "h2d-background-color": [makeContainerDeco, makeElevatedButtonStyle],
         "h2d-border-radius": makeContainerDeco, "h2d-padding": makeContainerPadding,
         "h2d-text-align": makeElevatedButtonStyle
     };
@@ -282,10 +282,10 @@ function transformAttribute(node, attr, value) {
 
         if (typeof attr2transform[attr] == "function")
             [forChild, propName, value2] = attr2transform[attr](node, attr, value);
-        else{
-            for (let func of funcs){
+        else {
+            for (let func of funcs) {
                 [forChild, propName, value2] = func(node, attr, value);
-                if (forChild!=null || propName!=null || value2!=null) break;
+                if (forChild != null || propName != null || value2 != null) break;
             }
         }
 
@@ -300,7 +300,7 @@ function transformAttribute(node, attr, value) {
 function processAttributes(dom, node, cssRules, dart, depth) {
     const IGNORES = [
         "id", "class", "if", "foreach", "h2d-left", "h2d-top", "src", "h2d-text-overflow",
-        "h2d-overflow", "h2d-overflow-x", "h2d-overflow-y", "scroller"
+        "h2d-overflow", "h2d-overflow-x", "h2d-overflow-y", "scroller", "no-wrap"
     ];
     const EXP_ATTRS = ["onclick", "oncontextmenu"];
     var attrs = [...node.getAttributeNames()];
@@ -310,7 +310,7 @@ function processAttributes(dom, node, cssRules, dart, depth) {
     for (let at of attrs) {
         at = at.toLowerCase();
         if (at.endsWith("-processed")) continue;
-        if (node.hasAttribute(at+"-processed")) continue;
+        if (node.hasAttribute(at + "-processed")) continue;
         if (IGNORES.includes(at)) continue;
         let attrValue = node.getAttribute(at);
         let [forChild, todo, propName, value] = transformAttribute(node, at, attrValue);
@@ -393,7 +393,7 @@ tagProcessors.BODYtail = function (dom, node, cssRules, dart, depth) {
 
         // Flatten for the case children:[someForEachHere...
         dart.code += `// Mimic flutter-view.io\n` +
-            `// Sometimes 'foreach' is inside 'children:[...]'\n`+
+            `// Sometimes 'foreach' is inside 'children:[...]'\n` +
             `__flatten(List list) {\n` +
             `    return List<Widget>.from(list.expand((item) {\n` +
             `        return item is Iterable ? item : [item as Widget];\n` +
@@ -419,25 +419,29 @@ tagProcessors.DIV = function (dom, node, cssRules, dart, depth) {
             return;
         }
         let params = paramStr.trim().replace(/[\s]{2,}/g, "\x20").split("\x20");
-        let str = `\n// Component function\nContainer ${func}({`;
+        let str = `\n// View function\nContainer ${func}({`;
         params = params.map(x => "required\x20" + x);
         str += params.join(",") + "}){\n";
         str += `${indent}return Container(child:\n`;
         dart.code += str;
 
     } else { // Regular div
-        addMarker(dart, node);        
+        addMarker(dart, node);
         let str;
 
         if (node.hasAttribute("h2d-width"))
             str = `${indent}Container(\n`;
-        else 
+        else
             str = `${indent}Container(width:double.infinity,\n`;
 
         dart.code += str;
         processAttributes(dom, node, cssRules, dart, depth);
 
-        str = `${indent}${TAB}child:Wrap(children:__flatten([\n`;
+        if (node.hasAttribute("no-wrap"))
+            str = `${indent}${TAB}child:\n`;
+        else 
+            str = `${indent}${TAB}child:Wrap(children:__flatten([\n`;
+
         dart.code += str;
     }
 }
@@ -451,7 +455,7 @@ tagProcessors.DIVtail = function (dom, node, cssRules, dart, depth) {
 
         // Flatten for the case children:[someForEachHere...    
         dart.code += `// Mimic flutter-view.io\n` +
-            `// Sometimes 'foreach' is inside 'children:[...]'\n`+
+            `// Sometimes 'foreach' is inside 'children:[...]'\n` +
             `__flatten(List list) {\n` +
             `    return List<Widget>.from(list.expand((item) {\n` +
             `        return item is Iterable ? item : [item as Widget];\n` +
@@ -459,7 +463,13 @@ tagProcessors.DIVtail = function (dom, node, cssRules, dart, depth) {
             `}\n` +
             `// EOF\n`;
     } else { // Regular div
-        let str = `${indent}])))${comma(node)}\n`;
+        let str;
+
+        if (node.hasAttribute("no-wrap"))
+            str = `${indent})${comma(node)}\n`;
+        else         
+            str = `${indent}])))${comma(node)}\n`;
+
         dart.code += str;
     }
 }
@@ -491,14 +501,24 @@ tagProcessors.SPAN = function (dom, node, cssRules, dart, depth) {
     var str = `${indent}Container(\n`;
     dart.code += str;
     processAttributes(dom, node, cssRules, dart, depth);
+    var str;
 
-    var str = `${indent}${TAB}child: Wrap(children:__flatten([\n`;
+    if (node.hasAttribute("no-wrap"))
+        str = `${indent}${TAB}child:\n`;
+    else 
+        str = `${indent}${TAB}child: Wrap(children:__flatten([\n`;
+
     dart.code += str;
 }
 tagProcessors.SPANtail = function (dom, node, cssRules, dart, depth) {
     var indent = node.indent;
+    var str;
 
-    var str = `${indent}])))${comma(node)}\n`;
+    if (node.hasAttribute("no-wrap"))
+        str = `${indent})${comma(node)}\n`;
+    else 
+        str = `${indent}])))${comma(node)}\n`;
+
     dart.code += str;
 }
 
@@ -525,7 +545,7 @@ tagProcessors.A = function (dom, node, cssRules, dart, depth) {
     addMarker(dart, node);
     var str = `${indent}TextButton(style:TextButton.styleFrom(minimumSize:Size(20,20)),\n`;
     dart.code += str;
-    node.setAttribute("h2d-text-align-processed","yes");
+    node.setAttribute("h2d-text-align-processed", "yes");
     processAttributes(dom, node, cssRules, dart, depth);
 
     var str = `${indent}${TAB}child:\n`;
@@ -549,7 +569,7 @@ tagProcessors.IMG = function (dom, node, cssRules, dart, depth) {
         src = src.slice("asset:".length);
         isAsset = true;
     }
-    if (fallbacksrc!=null)
+    if (fallbacksrc != null)
         fallbacksrc = fallbacksrc.slice("asset:".length);
 
     addMarker(dart, node);
@@ -566,17 +586,17 @@ tagProcessors.IMG = function (dom, node, cssRules, dart, depth) {
         if (isAsset)
             str = `${indent}Image.asset(${parsedSrc},\n`;
         else
-            str = `${indent}Image.network(${parsedSrc},`+
-            `webHtmlElementStrategy:WebHtmlElementStrategy.prefer,`+
-            `errorBuilder:(context,error,stackTrace){return Image.asset("${fallbacksrc}");},\n`;
+            str = `${indent}Image.network(${parsedSrc},` +
+                `webHtmlElementStrategy:WebHtmlElementStrategy.prefer,` +
+                `errorBuilder:(context,error,stackTrace){return Image.asset("${fallbacksrc}");},\n`;
     } else {
         if (isAsset)
             str = `${indent}Image.asset("${parsedSrc}",\n`;
         else
-            str = `${indent}Image.network("${parsedSrc}",`+
-            `webHtmlElementStrategy:WebHtmlElementStrategy.prefer,`+
-            `errorBuilder:(context,error,stackTrace){return Image.asset("${fallbacksrc}");},\n`;
-    }    
+            str = `${indent}Image.network("${parsedSrc}",` +
+                `webHtmlElementStrategy:WebHtmlElementStrategy.prefer,` +
+                `errorBuilder:(context,error,stackTrace){return Image.asset("${fallbacksrc}");},\n`;
+    }
     node.removeAttribute("fallbacksrc");
 
     dart.code += str;
@@ -596,10 +616,10 @@ function processTextNode(dom, node, cssRules, dart, depth) {
     var text = node.textContent;
     var [todo, parsedText] = parseText(text);
 
-    if (node.parentElement.tagName=="BUTTON" 
-            || node.parentElement.getAttribute("h2d-text-overflow")=="ellipsis")
+    if (node.parentElement.tagName == "BUTTON"
+        || node.parentElement.getAttribute("h2d-text-overflow") == "ellipsis")
         var ellipsis = ",maxLines:1,overflow:TextOverflow.ellipsis";
-    else 
+    else
         var ellipsis = "";
 
     if (todo == WITH_QUOTES) {
@@ -640,7 +660,7 @@ function processImports(dom, root, dart) {
 // Process 'if' clause
 function processIfOnly(dom, node, cssRules, dart, depth) {
     var clause = node.getAttribute("if");
-    clause = clause.replaceAll("@@","&&");
+    clause = clause.replaceAll("@@", "&&");
 
     var indent = node.indent;
     dart.code += `\n${indent}${clause}?\n`;
@@ -658,8 +678,8 @@ function processForOnly(dom, node, cssRules, dart, depth) {
     var outerTags = checkToAddOuterTag(node);
     var closing = "";
 
-    if (outerTags!=null){
-        openOuterTag(dom,node,cssRules,dart,depth,outerTags);    
+    if (outerTags != null) {
+        openOuterTag(dom, node, cssRules, dart, depth, outerTags);
         closing = ")".repeat(outerTags.length);
     }
     return `${closing}),`;
@@ -671,18 +691,18 @@ function processIfAndFor(dom, node, cssRules, dart, depth) {
 }
 
 // Check if needed to add outer tag
-function checkToAddOuterTag(node){
+function checkToAddOuterTag(node) {
     var outerTagList = [];
 
     // Positioned (must be first to stay right below Stack)
     var posAttrs = ["h2d-left", "h2d-top", "h2d-right", "h2d-bottom"];
 
     for (let at of posAttrs)
-        if (node.hasAttribute(at) && !outerTagList.includes("Positioned")) 
+        if (node.hasAttribute(at) && !outerTagList.includes("Positioned"))
             outerTagList.push("Positioned");
 
     // Secondary tap (rightclick)
-    if (node.getAttribute("oncontextmenu")!=null)
+    if (node.getAttribute("oncontextmenu") != null)
         outerTagList.push("GestureDetector");
 
     // Scroll bars (must be last to have child: with sizes to scroll)
@@ -693,75 +713,92 @@ function checkToAddOuterTag(node){
     var scrollAttrs = ["h2d-overflow", "h2d-overflow-y", "h2d-overflow-x"];
 
     for (let at of scrollAttrs)
-        if (node.getAttribute(at)=="auto" && !outerTagList.includes("Container-SB")){
+        if (node.getAttribute(at) == "auto" && !outerTagList.includes("Container-SB")) {
             outerTagList.push("Container-SB");
             outerTagList.push("Scrollbar");
             outerTagList.push("SingleChildScrollView");
-        }    
+        }
 
-    if (outerTagList.length>0) return outerTagList;
+    if (outerTagList.length > 0) return outerTagList;
     return null;
 }
 
 // Open outer tags
-function openOuterTag(dom,node,cssRules,dart,depth,outerTagList){
+function openOuterTag(dom, node, cssRules, dart, depth, outerTagList) {
     var indent = node.indent;
-    var [id,classes] = getNodeIdAndClasses(node);
+    var [id, classes] = getNodeIdAndClasses(node);
     dart.code += `\n${indent}// ${node.tagName} #${id} .${classes}\n`;
 
-    for (let outerTag of outerTagList){
+    for (let outerTag of outerTagList) {
         // Positioned
-        if (outerTag=="Positioned"){            
+        if (outerTag == "Positioned") {
             var left = node.getAttribute("h2d-left");
             var top = node.getAttribute("h2d-top");
-            var [t1,leftValue] = parseText(left);
-            var [t2,topValue] = parseText(top);
+            var [t1, leftValue] = parseText(left);
+            var [t2, topValue] = parseText(top);
 
             dart.code += `${indent}${outerTag}(`;
             dart.code += `left:${leftValue}, top:${topValue}, child:\n`;
         }
         // GestureDetector
-        if (outerTag=="GestureDetector"){
-            var code = node.getAttribute("oncontextmenu");            
+        if (outerTag == "GestureDetector") {
+            var code = node.getAttribute("oncontextmenu");
             dart.code += `${indent}GestureDetector(onSecondaryTap:${code}, child:\n`;
         }
         // Scrollbar/SingleChildScrollView
         // Check Scrollbar only, skip SingleChildScrollView
-        if (outerTag=="Container-SB"){
+        if (outerTag == "Container-SB") {
             var scroller = node.getAttribute("scroller");
             var w = node.getAttribute("h2d-width");
             var h = node.getAttribute("h2d-height");
-            var [t1,wValue] = parseText(w);
-            var [t2,hValue] = parseText(h);
+            var [t1, wValue] = parseText(w);
+            var [t2, hValue] = parseText(h);
             // Tag inside must autoexpand or no scrolling:
             node.removeAttribute("h2d-width");
             node.removeAttribute("h2d-height");
 
-            dart.code += 
-            `${indent}Container(width:${wValue}, height:${hValue}, child:\n`+
-            `${indent}Scrollbar(thumbVisibility:true, interactive:true, controller:${scroller}, child:\n`+
-            `${indent}SingleChildScrollView(controller:${scroller}, child:\n`;
+            dart.code +=
+                `${indent}Container(width:${wValue}, height:${hValue}, child:\n` +
+                `${indent}Scrollbar(thumbVisibility:true, interactive:true, controller:${scroller}, child:\n` +
+                `${indent}SingleChildScrollView(controller:${scroller}, child:\n`;
         }
     }
 }
 
 // Close outer tags
-function closeOuterTag(dom,node,cssRules,dart,depth,outerTagList){
+function closeOuterTag(dom, node, cssRules, dart, depth, outerTagList) {
     var indent = node.indent;
     var closing = ")".repeat(outerTagList.length);
     dart.code += `${indent}${closing},\n`;
 }
 
-// Process component tag
-function processComponent(dom,node,cssRules,dart,depth){
+// Process view func tag
+function processViewFunc(dom, node, cssRules, dart, depth) {
     var funcName = tag2func(node.tagName.toLowerCase());
     var indent = node.indent;
     dart.code += `${indent}${funcName}(`;
-    var names = node.getAttributeNames().filter(x=> x!="component");
+    var names = node.getAttributeNames().filter(x => x != "view-func");
 
-    var attrs = names.map(x=>{
+    var attrs = names.map(x => {
         var prop = attr2prop(x);
-        return prop+":"+prop;
+        return prop + ":" + prop;
+    });
+    var str = attrs.join(",");
+    dart.code += `${str})\n`;
+}
+
+// Process Dart class
+function processDartClass(dom, node, cssRules, dart, depth) {
+    var className = tag2func(node.tagName.toLowerCase());
+    className = className.substring(0,1).toUpperCase() + className.substring(1);
+    var indent = node.indent;
+    dart.code += `${indent}// Dart class\n`;
+    dart.code += `${indent}${className}(`;
+    var names = node.getAttributeNames().filter(x => x != "dart-class");
+
+    var attrs = names.map(x => {
+        var prop = attr2prop(x);
+        return prop + ":" + prop;
     });
     var str = attrs.join(",");
     dart.code += `${str})\n`;
@@ -778,7 +815,7 @@ function travelToEle(dom, node, cssRules, dart, depth) {
     else
         var indent = "\x20\x20\x20\x20".repeat(depth);
 
-    node.indent = indent;    
+    node.indent = indent;
 
     if (node.nodeType == ELEMENT_NODE) {
         var havingIfOnly = node.getAttribute("if") != null && node.getAttribute("foreach") == null;
@@ -787,14 +824,14 @@ function travelToEle(dom, node, cssRules, dart, depth) {
         var havingLogicTail = havingIfOnly == true || havingForOnly == true || havingIfAndFor == true;
         var tailOfIfAndFor = "";
     }
-    var outerTags=null;
+    var outerTags = null;
 
     if (node.nodeType == ELEMENT_NODE) {
         log(`${node.tagName}:${nodeLoc}`);
         // Let processFor* put outer tag after map((x)... to access x
-        if (node.getAttribute("foreach")==null){
+        if (node.getAttribute("foreach") == null) {
             outerTags = checkToAddOuterTag(node);
-            if (outerTags!=null) openOuterTag(dom,node,cssRules,dart,depth,outerTags);
+            if (outerTags != null) openOuterTag(dom, node, cssRules, dart, depth, outerTags);
         }
 
         if (node.tagName == "BODY" && node.getAttribute("func") != null) {
@@ -802,9 +839,11 @@ function travelToEle(dom, node, cssRules, dart, depth) {
             depth++;
         }
         if (typeof tagProcessors[node.tagName] != "function") {
-            if (node.getAttribute("component")!=null)
-                processComponent(dom,node,cssRules,dart,depth);
-            else {
+            if (node.getAttribute("view-func") != null)
+                processViewFunc(dom, node, cssRules, dart, depth);
+            else if (node.getAttribute("dart-class") != null)
+                processDartClass(dom, node, cssRules, dart, depth);
+            else{
                 log(`UNIMPLEMENTED TAG ${node.tagName}:${nodeLoc}`);
                 return;
             }
@@ -830,14 +869,14 @@ function travelToEle(dom, node, cssRules, dart, depth) {
     for (let childNode of node.childNodes)
         travelToEle(dom, childNode, cssRules, dart, depth + 1);
 
-    if (node.nodeType == ELEMENT_NODE) {        
-        if (typeof tagProcessors[node.tagName + "tail"] == "function"){
+    if (node.nodeType == ELEMENT_NODE) {
+        if (typeof tagProcessors[node.tagName + "tail"] == "function") {
             tagProcessors[node.tagName + "tail"](dom, node, cssRules, dart, depth);
 
             if (havingLogicTail)
                 dart.code += `${indent}${tailOfIfAndFor}\n`;
 
-            if (outerTags!=null) closeOuterTag(dom,node,cssRules,dart,depth,outerTags);
+            if (outerTags != null) closeOuterTag(dom, node, cssRules, dart, depth, outerTags);
         }
     }
 }
