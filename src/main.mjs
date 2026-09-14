@@ -204,8 +204,8 @@ function makeContainerDeco(node, attr, value) {
     return [false, "decoration", outValue];
 }
 
-// Make padding for container
-function makeContainerPadding(node, attr, value) {
+// Make padding ie. EdgeInsets
+function makeEdgeInsets(node,attr,value){
     var p = node.getAttribute("h2d-padding") ?? "0";
     var left, top, right, bottom;
 
@@ -221,6 +221,12 @@ function makeContainerPadding(node, attr, value) {
     }
 
     var outValue = `EdgeInsets.fromLTRB(${left},${top},${right},${bottom})`;
+    return outValue;
+}
+
+// Make padding for container
+function makeContainerPadding(node, attr, value) {
+    var outValue = makeEdgeInsets(node,attr,value);
     return [false, "padding", outValue];
 }
 
@@ -246,7 +252,20 @@ function makeElevatedButtonStyle(node, attr, value) {
 
 // Make input deco
 function makeInputDeco(node, attr, value) {
-    return [false, "decoration", `InputDecoration(hintText:"${value}")`];
+    if (node.tagName != "INPUT")
+        return [null,null,null];
+
+    var placeholder = node.getAttribute("placeholder");
+    var padding = makeEdgeInsets(node,attr,value);
+    if (placeholder==null) placeholder="";
+
+    node.setAttribute("placeholder-processed","yes");
+    node.setAttribute("h2d-padding-processed","yes");
+
+    return [
+        false, "decoration", 
+        `InputDecoration(hintText:"${value}", contentPadding:${padding})`
+    ];
 }
 
 // Transform attribute
@@ -268,7 +287,8 @@ function transformAttribute(node, attr, value) {
         "placeholder": makeInputDeco,
         // CSS props
         "h2d-background-color": [makeContainerDeco, makeElevatedButtonStyle],
-        "h2d-border-radius": makeContainerDeco, "h2d-padding": makeContainerPadding,
+        "h2d-border-radius": makeContainerDeco,
+        "h2d-padding": [makeInputDeco, makeContainerPadding],
         "h2d-text-align": makeElevatedButtonStyle
     };
     var [todo, value] = parseText(node.getAttribute(attr));
@@ -422,7 +442,7 @@ tagProcessors.DIV = function (dom, node, cssRules, dart, depth) {
         let str = `\n// View function\nContainer ${func}({`;
         params = params.map(x => "required\x20" + x);
         str += params.join(",") + "}){\n";
-        str += `${indent}return Container(child:\n`;
+        str += `${indent}return Container(child:Wrap(children:__flatten([\n`;
         dart.code += str;
 
     } else { // Regular div
@@ -439,7 +459,7 @@ tagProcessors.DIV = function (dom, node, cssRules, dart, depth) {
 
         if (node.hasAttribute("no-wrap"))
             str = `${indent}${TAB}child:\n`;
-        else 
+        else
             str = `${indent}${TAB}child:Wrap(children:__flatten([\n`;
 
         dart.code += str;
@@ -451,7 +471,7 @@ tagProcessors.DIVtail = function (dom, node, cssRules, dart, depth) {
 
     // Top function
     if (func != null) {
-        dart.code += `${indent});\n}\n`;
+        dart.code += `${indent}])));\n}\n`;
 
         // Flatten for the case children:[someForEachHere...    
         dart.code += `// Mimic flutter-view.io\n` +
@@ -467,7 +487,7 @@ tagProcessors.DIVtail = function (dom, node, cssRules, dart, depth) {
 
         if (node.hasAttribute("no-wrap"))
             str = `${indent})${comma(node)}\n`;
-        else         
+        else
             str = `${indent}])))${comma(node)}\n`;
 
         dart.code += str;
@@ -505,7 +525,7 @@ tagProcessors.SPAN = function (dom, node, cssRules, dart, depth) {
 
     if (node.hasAttribute("no-wrap"))
         str = `${indent}${TAB}child:\n`;
-    else 
+    else
         str = `${indent}${TAB}child: Wrap(children:__flatten([\n`;
 
     dart.code += str;
@@ -516,7 +536,7 @@ tagProcessors.SPANtail = function (dom, node, cssRules, dart, depth) {
 
     if (node.hasAttribute("no-wrap"))
         str = `${indent})${comma(node)}\n`;
-    else 
+    else
         str = `${indent}])))${comma(node)}\n`;
 
     dart.code += str;
@@ -790,7 +810,7 @@ function processViewFunc(dom, node, cssRules, dart, depth) {
 // Process Dart class
 function processDartClass(dom, node, cssRules, dart, depth) {
     var className = tag2func(node.tagName.toLowerCase());
-    className = className.substring(0,1).toUpperCase() + className.substring(1);
+    className = className.substring(0, 1).toUpperCase() + className.substring(1);
     var indent = node.indent;
     dart.code += `${indent}// Dart class\n`;
     dart.code += `${indent}${className}(`;
@@ -843,7 +863,7 @@ function travelToEle(dom, node, cssRules, dart, depth) {
                 processViewFunc(dom, node, cssRules, dart, depth);
             else if (node.getAttribute("dart-class") != null)
                 processDartClass(dom, node, cssRules, dart, depth);
-            else{
+            else {
                 log(`UNIMPLEMENTED TAG ${node.tagName}:${nodeLoc}`);
                 return;
             }
@@ -946,7 +966,8 @@ function convertToDart(htmlFilePath, cssFilePath, dartFilePath) {
     COMMENT_NODE = dom.window.Node.COMMENT_NODE;
 
     var dart = {
-        code: "// This file was generated by html2dart\n"
+        code: "// This file was generated by html2dart\n" +
+            "// NOTE TO AI AGENTS: DO NOT EDIT\n"
     };
     processImports(dom, rootEle, dart);
     travelToEle(dom, rootEle, sheet, dart, -1); // -1 to ignore root tag indent
