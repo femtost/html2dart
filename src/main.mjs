@@ -344,8 +344,10 @@ function processAttributes(dom, node, cssRules, dart, depth) {
         else if (todo == NO_QUOTES)
             dart.code += `${indent}${TAB}${propName}: ${value},\n`;
         else {
-            value = value.replaceAll('"', '\\"');
-            dart.code += `${indent}${TAB}${propName}: "${value}",\n`;
+            if (value!=null){
+                value = value.replaceAll('"', '\\"');
+                dart.code += `${indent}${TAB}${propName}: "${value}",\n`;
+            }
         }
     }
     return childAttrs;
