@@ -205,7 +205,7 @@ function makeContainerDeco(node, attr, value) {
 }
 
 // Make padding ie. EdgeInsets
-function makeEdgeInsets(node,attr,value){
+function makeEdgeInsets(node, attr, value) {
     var p = node.getAttribute("h2d-padding") ?? "0";
     var left, top, right, bottom;
 
@@ -226,7 +226,7 @@ function makeEdgeInsets(node,attr,value){
 
 // Make padding for container
 function makeContainerPadding(node, attr, value) {
-    var outValue = makeEdgeInsets(node,attr,value);
+    var outValue = makeEdgeInsets(node, attr, value);
     return [false, "padding", outValue];
 }
 
@@ -243,27 +243,33 @@ function makeElevatedButtonStyle(node, attr, value) {
 
     var color = node.getAttribute("h2d-background-color") ?? "white";
     color = colorToFlutter(color);
+    var textStyle = "";
 
+    if (node.getAttribute("h2d-font-size") != null){
+        let v = node.getAttribute("h2d-font-size");
+        textStyle = `,textStyle:TextStyle(fontSize:${v})`;
+        node.setAttribute("h2d-font-size-processed","yes");
+    }
     var outValue = `ElevatedButton.styleFrom(alignment:Alignment.${align},` +
         `padding: EdgeInsets.fromLTRB(10,10,10,10),` +
-        `backgroundColor:${color})`;
+        `backgroundColor:${color}${textStyle})`;
     return [true, "style", outValue];
 }
 
 // Make input deco
 function makeInputDeco(node, attr, value) {
     if (node.tagName != "INPUT")
-        return [null,null,null];
+        return [null, null, null];
 
     var placeholder = node.getAttribute("placeholder");
-    var padding = makeEdgeInsets(node,attr,value);
-    if (placeholder==null) placeholder="";
+    var padding = makeEdgeInsets(node, attr, value);
+    if (placeholder == null) placeholder = "";
 
-    node.setAttribute("placeholder-processed","yes");
-    node.setAttribute("h2d-padding-processed","yes");
+    node.setAttribute("placeholder-processed", "yes");
+    node.setAttribute("h2d-padding-processed", "yes");
 
     return [
-        false, "decoration", 
+        false, "decoration",
         `InputDecoration(hintText:"${value}", contentPadding:${padding})`
     ];
 }
@@ -344,7 +350,7 @@ function processAttributes(dom, node, cssRules, dart, depth) {
         else if (todo == NO_QUOTES)
             dart.code += `${indent}${TAB}${propName}: ${value},\n`;
         else {
-            if (value!=null){
+            if (value != null) {
                 value = value.replaceAll('"', '\\"');
                 dart.code += `${indent}${TAB}${propName}: "${value}",\n`;
             }
@@ -639,8 +645,9 @@ function processTextNode(dom, node, cssRules, dart, depth) {
     var [todo, parsedText] = parseText(text);
 
     if (node.parentElement.tagName == "BUTTON"
-        || node.parentElement.getAttribute("h2d-text-overflow") == "ellipsis")
+        || node.parentElement.getAttribute("h2d-text-overflow") == "ellipsis"){
         var ellipsis = ",maxLines:1,overflow:TextOverflow.ellipsis";
+    }
     else
         var ellipsis = "";
 
@@ -818,9 +825,29 @@ function processDartClass(dom, node, cssRules, dart, depth) {
     dart.code += `${indent}${className}(`;
     var names = node.getAttributeNames().filter(x => x != "dart-class");
 
+    // Make first attribute to be rendered first
+    if (names.includes("first"))
+        names = [...["first"], ...names.filter((x) => x != "first")];
+
+    // Parse all attributes
     var attrs = names.map(x => {
         var prop = attr2prop(x);
-        return prop + ":" + prop;
+        var value = node.getAttribute(prop).trim();
+
+        // Dart-code case
+        if (value.startsWith("$("))
+            value = value.slice(2).trim().replace(/\)$/, "");
+        else { // Literal
+            value = value.replaceAll("\n", "\\n")
+                .replaceAll('"', '\"');
+            value = '"' + value + '"';
+        }
+        value = value.replace(/[\s]{2,}/g, "\x20");
+
+        if (prop == "first")
+            return value;
+        else
+            return prop + ":" + value;
     });
     var str = attrs.join(",");
     dart.code += `${str})\n`;
