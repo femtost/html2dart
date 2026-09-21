@@ -399,11 +399,17 @@ tagProcessors.BODY = function (dom, node, cssRules, dart, depth) {
             log(`BAD FUNC TAG: BODY:${node.nodeLoc}, missing 'params'`);
             return;
         }
+        var gesture = "";
+
+        if (node.getAttribute("onclick") != null){
+            var tapFunc = node.getAttribute("onclick");
+            gesture = `Listener(behavior:HitTestBehavior.translucent, onPointerDown: ${tapFunc}, child:`;
+        }
         let params = paramStr.trim().replace(/[\s]{2,}/g, "\x20").split("\x20");
         let str = `\n// Screen function\nScaffold ${func}({`;
         params = params.map(x => "required\x20" + x);
         str += params.join(",") + "}){\n";
-        str += `${indent}return Scaffold(body: SizedBox.expand(child: Stack(children:[\n`;
+        str += `${indent}return Scaffold(body:${gesture} SizedBox.expand(child: Stack(children:[\n`;
         dart.code += str;
 
     } else { // Regular div
@@ -417,7 +423,9 @@ tagProcessors.BODYtail = function (dom, node, cssRules, dart, depth) {
 
     // Top function
     if (func != null) {
-        dart.code += `${indent}])));\n}\n`;
+        var closer = "";
+        if (node.getAttribute("onclick") != null) closer=")";
+        dart.code += `${indent}])))${closer};\n}\n`;
 
         // Flatten for the case children:[someForEachHere...
         dart.code += `// Mimic flutter-view.io\n` +
