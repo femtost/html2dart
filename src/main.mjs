@@ -731,6 +731,14 @@ function processIfAndFor(dom, node, cssRules, dart, depth) {
 function checkToAddOuterTag(node) {
     var outerTagList = [];
 
+    // SelectionArea (user-select:all)
+    var selAttrs = ["h2d-user-select"];
+
+    for (let at of selAttrs)
+        if (node.hasAttribute(at) && node.getAttribute("h2d-user-select")=="all"
+                && !outerTagList.includes("SelectionArea"))
+            outerTagList.push("SelectionArea");
+
     // Positioned (must be first to stay right below Stack)
     var posAttrs = ["h2d-left", "h2d-top", "h2d-right", "h2d-bottom"];
 
@@ -767,6 +775,11 @@ function openOuterTag(dom, node, cssRules, dart, depth, outerTagList) {
     dart.code += `\n${indent}// ${node.tagName} #${id} .${classes}\n`;
 
     for (let outerTag of outerTagList) {
+        // SelectionArea
+        if (outerTag == "SelectionArea") {
+            dart.code += `${indent}${outerTag}(child:\n`;
+            node.setAttribute("h2d-user-select-processed","yes");
+        }
         // Positioned
         if (outerTag == "Positioned") {
             var left = node.getAttribute("h2d-left");
