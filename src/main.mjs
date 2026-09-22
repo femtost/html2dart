@@ -858,7 +858,7 @@ function processDartClass(dom, node, cssRules, dart, depth) {
             return prop + ":" + value;
     });
     var str = attrs.join(",");
-    dart.code += `${str})\n`;
+    dart.code += `${str}),\n`;
 }
 
 // Travel to element in dom
